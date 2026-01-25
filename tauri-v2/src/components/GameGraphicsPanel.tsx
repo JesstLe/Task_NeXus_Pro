@@ -58,6 +58,10 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
     const [narakaSummary, setNarakaSummary] = React.useState<any | null>(null);
     const [fileBusy, setFileBusy] = React.useState(false);
     const [fileMessage, setFileMessage] = React.useState<string | null>(null);
+    const [bootPath, setBootPath] = React.useState<string | null>(null);
+    const [bootSummary, setBootSummary] = React.useState<any | null>(null);
+    const [bootBusy, setBootBusy] = React.useState(false);
+    const [bootMessage, setBootMessage] = React.useState<string | null>(null);
 
     const updateGraphics = (updates: Partial<GameGraphicsSettings>) => {
         onSettingChange('graphicsSettings', {
@@ -266,6 +270,88 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
         }
     };
 
+    const handleLoadBootConfig = async () => {
+        setBootMessage(null);
+        const path = await open({
+            title: '选择永劫无间 boot.config',
+            multiple: false,
+            filters: [{ name: 'boot.config', extensions: ['config'] }],
+        });
+        if (!path || Array.isArray(path)) return;
+
+        setBootBusy(true);
+        try {
+            const summary = await invoke<any>('naraka_parse_boot_config', { path });
+            setBootPath(path);
+            setBootSummary(summary);
+            const current = typeof summary?.customized_thread_max === 'number' ? summary.customized_thread_max : null;
+            updateGraphics({ optimize8to4: current === 4 });
+            setBootMessage('读取成功：已同步 8改4 开关状态。');
+        } catch (e) {
+            setBootMessage(`读取失败：${e}`);
+        } finally {
+            setBootBusy(false);
+        }
+    };
+
+    const deriveBootConfigPathFromQualityPath = (qualityPath: string): string | null => {
+        if (!qualityPath) return null;
+        const sep = qualityPath.includes('\\') ? '\\' : '/';
+        const parts = qualityPath.split(/[\\/]/).filter(Boolean);
+        if (parts.length === 0) return null;
+        parts[parts.length - 1] = 'boot.config';
+        return parts.join(sep);
+    };
+
+    const handleToggle8to4 = async (enabled: boolean) => {
+        setBootMessage(null);
+        let path = bootPath;
+        if (!path) {
+            if (narakaPath) {
+                const candidate = deriveBootConfigPathFromQualityPath(narakaPath);
+                if (candidate) {
+                    try {
+                        const summary = await invoke<any>('naraka_parse_boot_config', { path: candidate });
+                        setBootPath(candidate);
+                        setBootSummary(summary);
+                        path = candidate;
+                    } catch {
+                    }
+                }
+            }
+            if (!path) {
+                const picked = await open({
+                    title: '选择永劫无间 boot.config',
+                    multiple: false,
+                    filters: [{ name: 'boot.config', extensions: ['config'] }],
+                });
+                if (!picked || Array.isArray(picked)) {
+                    updateGraphics({ optimize8to4: !enabled });
+                    return;
+                }
+                path = picked;
+                setBootPath(path);
+            }
+        }
+
+        setBootBusy(true);
+        try {
+            await invoke('naraka_apply_boot_config_patch', {
+                path,
+                patch: { customized_thread_max: enabled ? 4 : 8 },
+            });
+            const summary = await invoke<any>('naraka_parse_boot_config', { path });
+            setBootSummary(summary);
+            updateGraphics({ optimize8to4: enabled });
+            setBootMessage(`写入成功：customized-thread-max=${enabled ? 4 : 8}`);
+        } catch (e) {
+            updateGraphics({ optimize8to4: !enabled });
+            setBootMessage(`写入失败：${e}`);
+        } finally {
+            setBootBusy(false);
+        }
+    };
+
     const qualityProfiles = [
         { id: 'competitive', label: '三高', sub: '纹理抗锯齿高，其余全低' },
         { id: 'very_low', label: '极低', sub: '预设：极低' },
@@ -275,6 +361,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
         { id: 'ultra', label: '极高', sub: '预设：极高' },
         { id: 'custom', label: '自定义', sub: '预设：自定义' },
     ];
+    const bootThreadMax = bootSummary?.customized_thread_max;
 
     const getSliderLabel = (val: number, type: 'quality' | 'tessellation') => {
         if (type === 'tessellation') {
@@ -751,31 +838,43 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
                     {/* 8改4 */}
                     <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100">
                         <div>
-                            <div className="flex items-center gap-2">
-                                <span className="font-medium text-slate-700 text-sm">8改4 优化</span>
-                                <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold">HOT</span>
-                            </div>
-                            <div className="text-xs text-slate-400">修改线程配置，提升多核利用率</div>
+                            <span className="font-medium text-slate-700 text-sm">8改4 优化</span>
+                            {bootPath && (
+                                <div className="text-[10px] text-slate-400 font-mono break-all mt-1">
+                                    {bootThreadMax === undefined ? 'customized-thread-max=?' : `customized-thread-max=${bootThreadMax}`}
+                                </div>
+                            )}
+                            {bootMessage && (
+                                <div className="text-[10px] text-slate-400 mt-1">
+                                    {bootMessage}
+                                </div>
+                            )}
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={graphicsSettings.optimize8to4}
-                                onChange={(e) => updateGraphics({ optimize8to4: e.target.checked })}
-                                className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
-                        </label>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleLoadBootConfig}
+                                disabled={bootBusy}
+                                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold transition-all active:scale-95 disabled:opacity-60"
+                            >
+                                选择
+                            </button>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={graphicsSettings.optimize8to4}
+                                    onChange={(e) => handleToggle8to4(e.target.checked)}
+                                    disabled={bootBusy}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                            </label>
+                        </div>
                     </div>
 
                     {/* Stone Milk */}
                     <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100">
                         <div>
-                            <div className="flex items-center gap-2">
-                                <span className="font-medium text-slate-700 text-sm">石头奶 (Stone Milk)</span>
-                                <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold">PRO</span>
-                            </div>
-                            <div className="text-xs text-slate-400">极致精简材质，敌人更清晰</div>
+                            <span className="font-medium text-slate-700 text-sm">石头奶</span>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input

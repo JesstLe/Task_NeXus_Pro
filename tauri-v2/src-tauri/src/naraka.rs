@@ -451,3 +451,84 @@ pub async fn naraka_apply_quality_patch(path: String, patch: NarakaQualityPatch)
     fs::write(&path, out).map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NarakaBootConfigSummary {
+    pub customized_thread_max: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NarakaBootConfigPatch {
+    pub customized_thread_max: Option<i64>,
+}
+
+fn parse_boot_kv(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (k, v) = trimmed.split_once('=')?;
+    Some((k.trim(), v.trim()))
+}
+
+fn parse_customized_thread_max(text: &str) -> Option<i64> {
+    for line in text.lines() {
+        if let Some((k, v)) = parse_boot_kv(line) {
+            if k == "customized-thread-max" {
+                if let Ok(n) = v.parse::<i64>() {
+                    return Some(n);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn patch_customized_thread_max(text: &str, new_value: i64) -> String {
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let has_trailing_newline = text.ends_with('\n');
+
+    let mut found = false;
+    let mut lines: Vec<String> = Vec::new();
+    for line in text.lines() {
+        if let Some((k, _)) = parse_boot_kv(line) {
+            if k == "customized-thread-max" {
+                lines.push(format!("customized-thread-max={new_value}"));
+                found = true;
+                continue;
+            }
+        }
+        lines.push(line.to_string());
+    }
+
+    if !found {
+        lines.push(format!("customized-thread-max={new_value}"));
+    }
+
+    let mut out = lines.join(newline);
+    if has_trailing_newline {
+        out.push_str(newline);
+    }
+    out
+}
+
+#[command]
+pub async fn naraka_parse_boot_config(path: String) -> Result<NarakaBootConfigSummary, String> {
+    let path = PathBuf::from(path);
+    let s = read_text_file(&path)?;
+    Ok(NarakaBootConfigSummary {
+        customized_thread_max: parse_customized_thread_max(&s),
+    })
+}
+
+#[command]
+pub async fn naraka_apply_boot_config_patch(path: String, patch: NarakaBootConfigPatch) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    let s = read_text_file(&path)?;
+    let mut out = s;
+    if let Some(v) = patch.customized_thread_max {
+        out = patch_customized_thread_max(&out, v);
+    }
+    fs::write(&path, out).map_err(|e| format!("写入文件失败: {e}"))?;
+    Ok(())
+}

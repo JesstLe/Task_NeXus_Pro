@@ -786,6 +786,8 @@ pub fn run() {
             naraka::naraka_parse_quality_settings,
             naraka::naraka_validate_quality_settings,
             naraka::naraka_apply_quality_patch,
+            naraka::naraka_parse_boot_config,
+            naraka::naraka_apply_boot_config_patch,
             // 窗口控制
             window_minimize,
             window_toggle_maximize,
