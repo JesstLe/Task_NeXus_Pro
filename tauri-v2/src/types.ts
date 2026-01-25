@@ -56,6 +56,7 @@ export interface SmartTrimSettings {
 
 export interface GameGraphicsSettings {
     qualityProfile: string;
+    preset: number;
     windowMode: string;
     resolution: string;
     fpsCap: number;

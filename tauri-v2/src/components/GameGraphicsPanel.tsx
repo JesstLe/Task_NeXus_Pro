@@ -10,7 +10,8 @@ interface GameGraphicsPanelProps {
 }
 
 const DEFAULT_GRAPHICS_SETTINGS: GameGraphicsSettings = {
-    qualityProfile: 'medium',
+    qualityProfile: 'very_low',
+    preset: 0,
     windowMode: 'fullscreen_exclusive',
     resolution: '1920x1080',
     fpsCap: 0,
@@ -49,7 +50,10 @@ const DEFAULT_GRAPHICS_SETTINGS: GameGraphicsSettings = {
 };
 
 export default function GameGraphicsPanel({ settings, onSettingChange }: GameGraphicsPanelProps) {
-    const graphicsSettings = settings.graphicsSettings || DEFAULT_GRAPHICS_SETTINGS;
+    const graphicsSettings: GameGraphicsSettings = {
+        ...DEFAULT_GRAPHICS_SETTINGS,
+        ...(settings.graphicsSettings || {})
+    };
     const [narakaPath, setNarakaPath] = React.useState<string | null>(null);
     const [narakaSummary, setNarakaSummary] = React.useState<any | null>(null);
     const [fileBusy, setFileBusy] = React.useState(false);
@@ -62,7 +66,26 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
         });
     };
 
+    const presetToQualityProfile = (preset: number): GameGraphicsSettings['qualityProfile'] => {
+        if (preset === 0) return 'very_low';
+        if (preset === 1) return 'low';
+        if (preset === 2) return 'medium';
+        if (preset === 3) return 'high';
+        if (preset === 4) return 'ultra';
+        return 'very_low';
+    };
+
+    const qualityProfileToPreset = (profile: string): number | null => {
+        if (profile === 'very_low') return 0;
+        if (profile === 'low') return 1;
+        if (profile === 'medium') return 2;
+        if (profile === 'high') return 3;
+        if (profile === 'ultra') return 4;
+        return null;
+    };
+
     const mapSummaryToSettings = (summary: any): Partial<GameGraphicsSettings> => {
+        const preset = Number(summary.preset ?? 0);
         const resolution = `${summary.resolution_width}x${summary.resolution_height}`;
         const fpsCap = summary.frame_rate_limit < 0 ? 0 : summary.frame_rate_limit;
         const renderScale = Math.round((summary.render_scale ?? 1) * 100);
@@ -76,8 +99,9 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
         const reflexMode =
             summary.reflex_mode === 2 ? 'boost' : summary.reflex_mode === 1 ? 'on' : 'off';
 
-        const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-        return {
+        const base: Partial<GameGraphicsSettings> = {
+            preset,
+            qualityProfile: presetToQualityProfile(preset),
             resolution,
             fpsCap,
             renderScale,
@@ -106,6 +130,14 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
             styleMode: Number(summary.style_mode ?? 0),
             raytracingEnabled: !!summary.raytracing_enabled,
             stoneMilk: !!summary.character_additional_physics1,
+        };
+        if (preset >= 1 && preset <= 4) {
+            return base;
+        }
+
+        const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+        return {
+            ...base,
             modelDetail: clamp(Number(summary.model_quality_level ?? 0), 0, 3),
             tessellation: clamp(Number(summary.tessellation_quality_level ?? 0), 0, 3),
             textureQuality: clamp(Number(summary.texture_quality_level ?? 0), 0, 3),
@@ -116,6 +148,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
     };
 
     const buildPatchFromSettings = (): any => {
+        const presetValue = qualityProfileToPreset(graphicsSettings.qualityProfile);
         const [wStr, hStr] = graphicsSettings.resolution.split('x');
         const resolutionWidth = Number.parseInt(wStr, 10);
         const resolutionHeight = Number.parseInt(hStr, 10);
@@ -146,6 +179,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
                     : 0;
 
         return {
+            preset: presetValue === null ? graphicsSettings.preset : presetValue,
             resolution_width: Number.isFinite(resolutionWidth) ? resolutionWidth : undefined,
             resolution_height: Number.isFinite(resolutionHeight) ? resolutionHeight : undefined,
             full_screen_mode: fullScreenMode,
@@ -230,10 +264,11 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
 
     const qualityProfiles = [
         { id: 'competitive', label: '三高', sub: '纹理抗锯齿高，其余全低' },
-        { id: 'lowest', label: '极低 (Lowest)', sub: '全最低，极限帧数' },
-        { id: 'medium', label: '中等 (Medium)', sub: '平衡' },
-        { id: 'ultra', label: '极高 (Ultra)', sub: '高画质需求选' },
-        { id: 'custom', label: '自定义', sub: '手动调节' },
+        { id: 'very_low', label: '极低', sub: '预设：极低' },
+        { id: 'low', label: '低', sub: '预设：低' },
+        { id: 'medium', label: '中', sub: '预设：中' },
+        { id: 'high', label: '高', sub: '预设：高' },
+        { id: 'ultra', label: '极高', sub: '预设：极高' },
     ];
 
     const getSliderLabel = (val: number, type: 'quality' | 'tessellation') => {
@@ -320,11 +355,18 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
                     <Layers size={18} className="text-violet-500" />
                     全局画质方案 (QUALITY PROFILE)
                 </h4>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                     {qualityProfiles.map((profile) => (
                         <button
                             key={profile.id}
-                            onClick={() => updateGraphics({ qualityProfile: profile.id })}
+                            onClick={() => {
+                                const presetValue = qualityProfileToPreset(profile.id);
+                                updateGraphics(
+                                    presetValue === null
+                                        ? { qualityProfile: profile.id }
+                                        : { qualityProfile: profile.id, preset: presetValue }
+                                );
+                            }}
                             className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all ${
                                 graphicsSettings.qualityProfile === profile.id
                                     ? 'bg-slate-900 border-slate-900 text-white shadow-lg scale-[1.02]'

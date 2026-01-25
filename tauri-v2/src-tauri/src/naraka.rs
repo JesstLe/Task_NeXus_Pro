@@ -237,6 +237,7 @@ pub async fn naraka_validate_quality_settings(path: String) -> Result<serde_json
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NarakaQualityPatch {
+    pub preset: Option<i64>,
     pub resolution_width: Option<i64>,
     pub resolution_height: Option<i64>,
     pub full_screen_mode: Option<i64>,
@@ -300,6 +301,9 @@ pub async fn naraka_apply_quality_patch(path: String, patch: NarakaQualityPatch)
         serde_json::from_str(&s).map_err(|e| format!("解析 JSON 失败: {e}"))?;
     ensure_naraka_shape(&data)?;
 
+    if let Some(v) = patch.preset {
+        set_ptr(&mut data, "/preset", serde_json::json!(v));
+    }
     if let Some(v) = patch.resolution_width {
         set_ptr(&mut data, "/l22SystemQualitySetting/resolutionWidth", serde_json::json!(v));
     }
