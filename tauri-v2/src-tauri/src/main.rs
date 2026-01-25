@@ -765,6 +765,8 @@ pub fn run() {
             optimizer::optimize_latency,
             optimizer::optimize_network,
             optimizer::optimize_power_gpu,
+            optimizer::get_win32_priority_separation,
+            optimizer::set_win32_priority_separation,
             // 注册表操作
             task_nexus_lib::registry::backup_registry,
             task_nexus_lib::registry::import_registry,

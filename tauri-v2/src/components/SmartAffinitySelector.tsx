@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, Cpu, MousePointer2, Settings, Layers, RefreshCw, Check, Hash, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Zap, Cpu, Layers, RefreshCw, Check, Hash, X } from 'lucide-react';
 import { LogicalCore } from '../types';
 
 const CoreTypeColors: Record<string, string> = {
@@ -180,6 +180,13 @@ export default function SmartAffinitySelector({
                             <>
                                 <button onClick={() => selectCores(c => c.core_type === 'VCache')} className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-colors">只选 V-Cache</button>
                                 <button onClick={() => selectCores(c => c.core_type === 'Performance')} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">只选高频核</button>
+                                <button 
+                                    onClick={() => selectCores(c => c.core_type === 'VCache' && c.id !== 0)}
+                                    className="px-3 py-1.5 text-xs bg-amber-50 text-amber-600 rounded-lg border border-amber-100 hover:bg-amber-100 transition-colors" 
+                                    title="推荐：避开系统负载较重的 Core 0"
+                                >
+                                    V-Cache (无 Core 0)
+                                </button>
                             </>
                         )}
                         <div className="w-px h-6 bg-slate-200 mx-1 self-center"></div>

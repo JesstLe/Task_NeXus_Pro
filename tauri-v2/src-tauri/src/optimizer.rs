@@ -177,6 +177,34 @@ async fn optimize_power_gpu_internal(enable: bool, hags: bool) -> AppResult<()> 
     Ok(())
 }
 
+#[command]
+pub async fn get_win32_priority_separation() -> Result<u32, String> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let key = hklm.open_subkey_with_flags(
+        r"SYSTEM\CurrentControlSet\Control\PriorityControl",
+        KEY_READ,
+    ).map_err(|e| format!("Failed to open registry key: {}", e))?;
+
+    let val: u32 = key.get_value("Win32PrioritySeparation")
+        .map_err(|e| format!("Failed to read Win32PrioritySeparation: {}", e))?;
+    
+    Ok(val)
+}
+
+#[command]
+pub async fn set_win32_priority_separation(value: u32) -> Result<(), String> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let key = hklm.open_subkey_with_flags(
+        r"SYSTEM\CurrentControlSet\Control\PriorityControl",
+        KEY_WRITE,
+    ).map_err(|e| format!("Failed to open registry key: {}", e))?;
+
+    key.set_value("Win32PrioritySeparation", &value)
+        .map_err(|e| format!("Failed to set Win32PrioritySeparation: {}", e))?;
+    
+    Ok(())
+}
+
 fn run_cmd(cmd: &str, args: &[&str]) -> AppResult<()> {
     Command::new(cmd)
         .args(args)

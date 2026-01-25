@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Zap, Check, AlertTriangle } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { RegistryCleaner } from './optimizer/RegistryCleaner';
+import { Win32PrioritySeparation } from './optimizer/Win32PrioritySeparation';
 
 interface Tweak {
     id: string;
@@ -51,9 +52,9 @@ export default function SystemOptimizer() {
     }, {} as Record<string, Tweak[]>);
 
     return (
-        <div className="flex gap-6 h-full">
+        <div className="flex gap-6 h-full overflow-hidden">
             {/* Left Panel - System Tweaks */}
-            <div className="flex-1 glass rounded-2xl p-6 shadow-soft flex flex-col">
+            <div className="flex-1 glass rounded-2xl p-6 shadow-soft flex flex-col min-w-[320px]">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
                         <Zap size={20} className="text-white" />
@@ -108,9 +109,17 @@ export default function SystemOptimizer() {
                 </div>
             </div>
 
-            {/* Right Panel - Registry Cleaner */}
-            <div className="flex-1">
-                <RegistryCleaner />
+            {/* Right Panel Container - Split into Registry Cleaner and Priority Separation */}
+            <div className="flex-1 flex flex-col gap-6 min-w-[300px]">
+                {/* Top Right - Win32PrioritySeparation */}
+                <div className="flex-1">
+                    <Win32PrioritySeparation />
+                </div>
+                
+                {/* Bottom Right - Registry Cleaner */}
+                <div className="flex-1">
+                    <RegistryCleaner />
+                </div>
             </div>
         </div>
     );
