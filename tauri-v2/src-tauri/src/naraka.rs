@@ -637,3 +637,43 @@ pub async fn naraka_apply_boot_config_patch(path: String, patch: NarakaBootConfi
     fs::write(&path, out).map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_keys_in_order(s: &str, keys: &[&str]) {
+        let mut last = 0usize;
+        for k in keys {
+            let needle = format!("\"{k}\"");
+            let pos = s.find(&needle).unwrap_or_else(|| panic!("missing key: {k}"));
+            assert!(
+                pos >= last,
+                "key order wrong: {k} at {pos} < last {last}"
+            );
+            last = pos;
+        }
+    }
+
+    #[test]
+    fn naraka_quality_settings_write_order_is_stable() {
+        let input = r#"{"preset":-1,"l22GraphicQualityLevel":{"m_modelQualityLevel":2,"m_tessellationQualityLevel":0,"m_visualEffectsQualityLevel":0,"m_textureQualityLevel":0,"m_shadowQualityLevel":0,"m_volumetricLightLevel":0,"m_cloudQualityLevel":0,"m_aoLevel":0,"m_SSRLevel":0,"m_AALevel":0,"m_PostProcessingLevel":0,"m_LightingQualityLevel":0},"l22SystemQualitySetting":{"renderScale":1.0,"renderScaleStep":0.05000000074505806,"aaMode":1,"checkboardRendering":0,"upSamplingType":1,"enableDlssDx12":true,"enableDlssG":true,"frameBoostDlssG":0,"enableDlssRR":false,"randomDiscardFactor":4.0,"dlssMode":0,"xessMode":101,"xefgMode":0,"dlssSharpness":0.5,"lxFsr2Mode":0,"fsr2Sharpness":0.0,"lxFsr3Mode":1,"enbaleFSR3FrameInterpolation":false,"nisQuality":0,"fullScreenMode":0,"resolutionWidth":1920,"resolutionHeight":1080,"frameRateLimit":-1,"vSyncCount":0,"gamma":2.200000047683716,"maxLuma":1.0,"minLuma":0.009999999776482582,"paperWhite":9.0,"mHDRMode":0,"reflexMode":1,"xellMode":0,"antiLag2Enabled":false,"vrsMode":0,"colorBlindMode":0,"colorBlindStrength":0.0,"colorBlindQualityMode":false,"nvHighlightsEnabled":false,"styleMode":2,"motionBlurEnabled":false,"raytracingEnabled":false,"raytracingAO":false,"raytracingGI":false,"raytracingReflection":false,"raytracingShadow":false,"raytracingBVHAllInOne":false,"raytracingBVHActorCountMax":0,"rtgiResolution":0,"characterAdditionalPhysics1":true,"xboxQualityOption":0}}"#;
+
+        let parsed: serde_json::Value = serde_json::from_str(input).unwrap();
+        let reordered = reorder_naraka_quality_settings(parsed);
+        let out = serde_json::to_string(&reordered).unwrap();
+
+        assert_keys_in_order(&out, NARAKA_TOP_KEYS);
+
+        let gq_start = out.find("\"l22GraphicQualityLevel\"").unwrap();
+        assert_keys_in_order(&out[gq_start..], NARAKA_GRAPHIC_QUALITY_KEYS);
+
+        let sq_start = out.find("\"l22SystemQualitySetting\"").unwrap();
+        let expected_sq_keys: Vec<&str> = NARAKA_SYSTEM_QUALITY_KEYS
+            .iter()
+            .copied()
+            .filter(|k| *k != "enableFSR3FrameInterpolation")
+            .collect();
+        assert_keys_in_order(&out[sq_start..], &expected_sq_keys);
+    }
+}

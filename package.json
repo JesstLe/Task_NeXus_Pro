@@ -1,6 +1,6 @@
 {
   "name": "task-nexus",
-  "version": "3.0.9",
+  "version": "3.3.0",
   "description": "Task Nexus Application",
   "main": "electron/main.js",
   "scripts": {

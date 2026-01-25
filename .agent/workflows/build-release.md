@@ -14,7 +14,7 @@ description: Build and release portable EXE to tn_new folder
 
 ## Current Version
 
-**V3.1.0** (Released 2026-01-26)
+**V3.3.0** (Released 2026-01-26)
 
 ## Build Steps
 
@@ -34,7 +34,7 @@ description: Build and release portable EXE to tn_new folder
 3. **Copy Portable EXE to Output Folder**:
    // turbo
    ```powershell
-   $version = "3.0.0"
+   $version = "3.3.0"   
    $src = "e:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\target\release\task-nexus.exe"
    $dest = "E:\Documents\WorkSpace\tn_new"
    if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force }
