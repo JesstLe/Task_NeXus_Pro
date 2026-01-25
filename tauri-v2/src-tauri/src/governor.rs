@@ -384,14 +384,27 @@ pub async fn set_affinity(
                     }
                 }
                 "d2" => {
-                    // 笔记本狂暴模式：高优先级 + 禁用超线程
                     priority_class = HIGH_PRIORITY_CLASS;
                     let core_count = mask.count_ones();
                     if core_count > 4 {
                         let mut smt_off_mask = 0u64;
-                        for i in (0..64).step_by(2) {
-                            if (mask & (1u64 << i)) != 0 {
-                                smt_off_mask |= 1u64 << i;
+                        if let Ok(topo) = crate::hardware_topology::get_cpu_topology() {
+                            let mut physical_map: HashMap<usize, Vec<usize>> = HashMap::new();
+                            for c in topo {
+                                if c.id < 64 && (mask & (1u64 << c.id)) != 0 {
+                                    physical_map.entry(c.physical_id).or_default().push(c.id);
+                                }
+                            }
+                            for cores in physical_map.values() {
+                                if let Some(min_id) = cores.iter().min() {
+                                    smt_off_mask |= 1u64 << min_id;
+                                }
+                            }
+                        } else {
+                            for i in (0..64).step_by(2) {
+                                if (mask & (1u64 << i)) != 0 {
+                                    smt_off_mask |= 1u64 << i;
+                                }
                             }
                         }
                         if smt_off_mask > 0 {
@@ -400,8 +413,8 @@ pub async fn set_affinity(
                     }
                 }
                 "d3" => {
-                    // 极致狂暴模式：实时优先级 + 避开 Core 0
-                    priority_class = REALTIME_PRIORITY_CLASS;
+                    priority_class = HIGH_PRIORITY_CLASS;
+                    tracing::warn!("d3 mode avoids RealTime priority to reduce system risk");
                     if (mask & 1) != 0 && (mask ^ 1) != 0 {
                         final_mask = mask & !1u64;
                     }

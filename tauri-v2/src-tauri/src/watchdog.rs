@@ -439,7 +439,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
         }
 
         // 2. 判定是否在游戏列表中
-        let is_game = game_list.iter().any(|g| name_lower.contains(g));
+        let is_game = game_list.iter().any(|g| name_lower == *g || name_lower.ends_with(g));
         let mut changed = false;
 
         // 3. 应用规则

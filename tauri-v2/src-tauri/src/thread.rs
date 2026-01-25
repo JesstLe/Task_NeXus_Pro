@@ -92,7 +92,7 @@ pub fn get_process_threads(pid: u32) -> AppResult<Vec<ThreadInfo>> {
     if let Some(max_idx) = threads
         .iter()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap())
+        .max_by(|(_, a), (_, b)| a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(i, _)| i)
     {
         if threads[max_idx].cpu_usage > 0.1 {
@@ -101,7 +101,7 @@ pub fn get_process_threads(pid: u32) -> AppResult<Vec<ThreadInfo>> {
     }
 
     // 按 CPU 使用率降序排序
-    threads.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap());
+    threads.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap_or(std::cmp::Ordering::Equal));
 
     Ok(threads)
 }
@@ -160,6 +160,9 @@ fn calculate_thread_cpu_usage(tid: u32, current_time: u64) -> f32 {
 /// 设置线程亲和性
 #[cfg(windows)]
 pub fn set_thread_affinity(tid: u32, core_mask: u64) -> AppResult<()> {
+    if core_mask == 0 {
+        return Err(AppError::SystemError("无效的核心掩码".into()));
+    }
     unsafe {
         let handle = OpenThread(
             THREAD_QUERY_INFORMATION | THREAD_SET_INFORMATION,
@@ -183,6 +186,10 @@ pub fn set_thread_affinity(tid: u32, core_mask: u64) -> AppResult<()> {
 #[cfg(windows)]
 pub async fn smart_bind_thread(pid: u32, target_core: u32) -> AppResult<u32> {
     use std::time::Duration;
+
+    if target_core >= 64 {
+        return Err(AppError::SystemError("核心索引超出范围".into()));
+    }
 
     tokio::task::spawn_blocking(move || {
         unsafe {
