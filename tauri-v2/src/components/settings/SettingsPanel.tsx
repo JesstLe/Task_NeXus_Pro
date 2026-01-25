@@ -136,6 +136,11 @@ export default function SettingsPanel({
                                                 优先级: {profile.priority}
                                             </span>
                                         )}
+                                        {profile.cpuLimitPercent != null && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">
+                                                CPU上限: {profile.cpuLimitPercent}%
+                                            </span>
+                                        )}
                                         <span className="text-[10px] text-slate-400">
                                             {new Date(profile.timestamp).toLocaleDateString()}
                                         </span>

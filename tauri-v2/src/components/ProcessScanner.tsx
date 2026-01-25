@@ -235,7 +235,8 @@ export default function ProcessScanner({
                 affinity: maskString,
                 mode: mode,
                 priority: affinityModal.process.priority || 'Normal',
-                primary_core: null,
+                primaryCore: null,
+                cpuLimitPercent: null,
                 enabled: true,
                 timestamp: Date.now()
             };
@@ -337,6 +338,7 @@ export default function ProcessScanner({
                     mode: process.cpu_affinity?.startsWith('Sets') ? 'soft' : 'hard',
                     priority: process.priority || 'Normal',
                     primaryCore: args.targetCore, // Save the selected core as primary
+                    cpuLimitPercent: null,
                     enabled: true,
                     timestamp: Date.now()
                 };
@@ -356,6 +358,7 @@ export default function ProcessScanner({
                     mode: process.cpu_affinity?.startsWith('Sets') ? 'soft' : 'hard',
                     priority: args.priority,
                     primaryCore: null,
+                    cpuLimitPercent: null,
                     enabled: true,
                     timestamp: Date.now()
                 };

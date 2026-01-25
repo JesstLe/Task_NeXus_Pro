@@ -38,6 +38,7 @@ function App() {
     const [primaryCore, setPrimaryCore] = useState('auto');
     const [settings, setSettings] = useState<AppSettings>({});
     const [priority, setPriority] = useState('Normal');
+    const [cpuLimitPercent, setCpuLimitPercent] = useState<number | null>(null);
     const [toasts, setToasts] = useState<ToastInfo[]>([]);
     const [selectedPids, setSelectedPids] = useState<Set<number>>(new Set());
     const [topology, setTopology] = useState<LogicalCore[]>([]);
@@ -254,11 +255,12 @@ function App() {
         selectedCores.forEach(core => {
             mask |= (1n << BigInt(core));
         });
+        const maskDecString = mask.toString();
 
         try {
             const result = await invoke<{ success: boolean, error?: string }>('set_affinity', {
                 pid: selectedPid,
-                coreMask: mask.toString(),
+                coreMask: maskDecString,
                 mode,
                 primaryCore: primaryCoreValue
             });
@@ -272,9 +274,26 @@ function App() {
             }
 
             if (result.success) {
+                let cpuLimitSuccess = true;
+                try {
+                    if (cpuLimitPercent != null) {
+                        await invoke('set_process_cpu_limit', { pid: selectedPid, percent: cpuLimitPercent });
+                    } else {
+                        await invoke('clear_process_cpu_limit', { pid: selectedPid });
+                    }
+                } catch (e) {
+                    console.error(`CPU limit set failed`, e);
+                    cpuLimitSuccess = false;
+                }
+
                 setStatus('active');
-                const statusMsg = prioritySuccess ? ` | 优先级: ${priority}` : ' (优先级设置失败)';
-                showToast(`已应用到进程 ${selectedPid}${statusMsg}，必须点击清理内存`, 'success', 5000);
+                const statusMsg = [
+                    prioritySuccess ? `优先级: ${priority}` : '优先级设置失败',
+                    cpuLimitSuccess
+                        ? (cpuLimitPercent != null ? `CPU上限: ${cpuLimitPercent}%` : 'CPU上限: 不限')
+                        : 'CPU上限设置失败',
+                ].join(' | ');
+                showToast(`已应用到进程 ${selectedPid} | ${statusMsg}，必须点击清理内存`, 'success', 5000);
 
                 if (mode === 'dynamic') {
                     await invoke('clear_memory').catch(() => { });
@@ -308,10 +327,11 @@ function App() {
 
         const profile: ProcessProfile = {
             name: process.name,
-            affinity: mask.toString(),
+            affinity: mask.toString(16),
             mode: mode,
             priority: priority,
             primaryCore: primaryCoreValue,
+            cpuLimitPercent: cpuLimitPercent,
             timestamp: Date.now()
         };
 
@@ -511,6 +531,8 @@ function App() {
                             cpuInfo={cpuInfo}
                             priority={priority}
                             onPriorityChange={setPriority}
+                            cpuLimitPercent={cpuLimitPercent}
+                            onCpuLimitPercentChange={setCpuLimitPercent}
                             showToast={showToast}
                         />
                     </div>

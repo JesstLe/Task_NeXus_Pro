@@ -10,7 +10,7 @@ description: Build and release portable EXE to tn_new folder
 - **Increment Rule**: 满10进1 (Decimal-like versioning)
   - Patch (Z in X.Y.Z): 0-9, when reaching 10, reset to 0 and increment Minor.
   - Minor (Y in X.Y.Z): 0-9, when reaching 10, reset to 0 and increment Major.
-  - Example: `3.0.9` → `3.1.0` → `3.1.9` → `3.2.0` → ... → `3.9.9` → `4.0.0`
+-  - Example: `3.0.9` → `3.3.0` → `3.3.9` → `3.4.0` → ... → `3.9.9` → `4.0.0`
 
 ## Current Version
 

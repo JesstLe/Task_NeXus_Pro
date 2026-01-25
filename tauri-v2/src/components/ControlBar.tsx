@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, Square, Activity, Save, ChevronDown, Zap, RefreshCw } from 'lucide-react';
 import { CpuInfo } from '../types';
 import { invoke } from '@tauri-apps/api/core';
@@ -11,6 +11,8 @@ interface ControlBarProps {
     cpuInfo: CpuInfo | null;
     priority?: string;
     onPriorityChange: (p: string) => void;
+    cpuLimitPercent?: number | null;
+    onCpuLimitPercentChange: (v: number | null) => void;
     showToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -22,10 +24,13 @@ export default function ControlBar({
     cpuInfo,
     priority = 'Normal',
     onPriorityChange,
+    cpuLimitPercent = null,
+    onCpuLimitPercentChange,
     showToast
 }: ControlBarProps) {
     const isRunning = status === 'active';
     const [showPriorityMenu, setShowPriorityMenu] = useState(false);
+    const [cpuLimitInput, setCpuLimitInput] = useState<string>(cpuLimitPercent == null ? '' : String(cpuLimitPercent));
 
     const priorities = [
         { value: 'Low', label: '低', color: 'text-slate-500' },
@@ -37,6 +42,10 @@ export default function ControlBar({
     ];
 
     const currentPriority = priorities.find(p => p.value === priority) || priorities[2];
+
+    useEffect(() => {
+        setCpuLimitInput(cpuLimitPercent == null ? '' : String(cpuLimitPercent));
+    }, [cpuLimitPercent]);
 
     // Clear Memory Logic
     const [cleaning, setCleaning] = useState(false);
@@ -106,6 +115,62 @@ export default function ControlBar({
                                 ))}
                             </div>
                         </>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-slate-600 bg-white/70">
+                    <span className="text-xs text-slate-500 hidden sm:inline">CPU上限</span>
+                    <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={cpuLimitInput}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            setCpuLimitInput(v);
+                            if (v.trim() === '') {
+                                onCpuLimitPercentChange(null);
+                                return;
+                            }
+                            const parsed = Number.parseInt(v, 10);
+                            if (!Number.isFinite(parsed)) return;
+                            if (parsed >= 1 && parsed <= 100) {
+                                onCpuLimitPercentChange(parsed);
+                            }
+                        }}
+                        onBlur={() => {
+                            const v = cpuLimitInput.trim();
+                            if (v === '') {
+                                onCpuLimitPercentChange(null);
+                                return;
+                            }
+                            let parsed = Number.parseInt(v, 10);
+                            if (!Number.isFinite(parsed)) {
+                                setCpuLimitInput('');
+                                onCpuLimitPercentChange(null);
+                                return;
+                            }
+                            parsed = Math.max(1, Math.min(100, parsed));
+                            setCpuLimitInput(String(parsed));
+                            onCpuLimitPercentChange(parsed);
+                        }}
+                        className="w-16 bg-transparent outline-none text-sm font-medium text-slate-700"
+                        placeholder="不限"
+                        inputMode="numeric"
+                    />
+                    <span className="text-xs text-slate-400">%</span>
+                    {cpuLimitPercent != null && (
+                        <button
+                            onClick={() => {
+                                setCpuLimitInput('');
+                                onCpuLimitPercentChange(null);
+                            }}
+                            className="text-xs text-slate-400 hover:text-violet-600 transition-colors"
+                            title="取消CPU上限"
+                        >
+                            不限
+                        </button>
                     )}
                 </div>
 

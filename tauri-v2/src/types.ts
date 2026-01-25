@@ -45,6 +45,7 @@ export interface ProcessProfile {
     mode: string;
     priority: string;
     primaryCore: number | null;
+    cpuLimitPercent?: number | null;
     timestamp: number;
 }
 
