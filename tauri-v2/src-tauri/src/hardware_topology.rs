@@ -127,17 +127,17 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
                 core_type = CoreType::Performance;
             }
         }
-        // Intel Hybrid 判断逻辑
-        else if core.efficiency_class == 1 {
-            core_type = CoreType::Performance;
-        } else if core.efficiency_class == 0 {
-            if is_hybrid {
+        // Intel Hybrid 判断逻辑 (Dynamic Efficiency Class)
+        else if is_hybrid {
+            // 如果是混合架构，EfficiencyClass 较小的为 E-Core，较大的为 P-Core
+            // 通常 E-Core 是 min_class (e.g., 0 or 1)
+            if core.efficiency_class == min_class {
                 core_type = CoreType::Efficiency;
             } else {
                 core_type = CoreType::Performance;
             }
         } else {
-            // 更高的 efficiency class 也视为 Performance
+            // 非混合架构，默认为 Performance
             core_type = CoreType::Performance;
         }
 

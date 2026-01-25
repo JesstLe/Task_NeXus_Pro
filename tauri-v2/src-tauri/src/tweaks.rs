@@ -226,6 +226,11 @@ pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
         let mut cur: u32 = 0;
         let _ = NtQueryTimerResolution(&mut min, &mut max, &mut cur);
 
+        tracing::debug!(
+            "TimerResolution Query: Min(Longest)={}ns, Max(Shortest)={}ns, Cur={}ns. Requesting: {}ms",
+            min, max, cur, res_ms
+        );
+
         // 如果 res_ms 为 0，则尝试恢复默认 (通常是请求 min 或取消请求)
         // 实际上 NtSetTimerResolution 的第二个参数是 Set (boolean)
         let (set, res_val) = if res_ms <= 0.0 {
@@ -240,6 +245,11 @@ pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
 
         let mut actual: u32 = 0;
         let status = NtSetTimerResolution(res_val, set, &mut actual);
+        
+        tracing::debug!(
+            "TimerResolution Set: Status=0x{:X}, Set={}, ReqVal={}, Actual={}ns",
+            status, set, res_val, actual
+        );
         
         if status == 0 {
             Ok(actual as f64 / 10000.0)
