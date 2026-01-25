@@ -60,7 +60,7 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
     }
 
     // Use a budget to limit heavy operations per tick
-    let mut operation_budget = 5;
+    let mut operation_budget = processes.len();
     let mut matched_pids: HashSet<u32> = HashSet::new();
 
     for p in processes {
@@ -317,11 +317,25 @@ pub fn get_default_masks() -> (u64, u64) {
 
             let mut game_mask = 0u64;
             let mut system_mask = 0u64;
+            let mut all_mask = 0u64;
+            let mut has_high_core = false;
+
+            for c in &topology {
+                if c.id < 64 {
+                    all_mask |= 1u64 << c.id;
+                } else {
+                    has_high_core = true;
+                }
+            }
 
             if has_e_cores {
                 // Intel 混合架构: 游戏 -> P核, 系统 -> E核
                 for c in &topology {
-                    let bit = 1u64 << (c.id % 64);
+                    if c.id >= 64 {
+                        has_high_core = true;
+                        continue;
+                    }
+                    let bit = 1u64 << c.id;
                     if c.core_type == CoreType::Performance {
                         game_mask |= bit;
                     } else if c.core_type == CoreType::Efficiency {
@@ -331,7 +345,11 @@ pub fn get_default_masks() -> (u64, u64) {
             } else if has_vcache {
                 // AMD V-Cache 架构: 游戏 -> V-Cache 核心, 系统 -> 其他核心
                 for c in &topology {
-                    let bit = 1u64 << (c.id % 64);
+                    if c.id >= 64 {
+                        has_high_core = true;
+                        continue;
+                    }
+                    let bit = 1u64 << c.id;
                     if c.core_type == CoreType::VCache {
                         game_mask |= bit;
                     } else {
@@ -339,28 +357,53 @@ pub fn get_default_masks() -> (u64, u64) {
                     }
                 }
             } else {
-                // 标准 CPU 或未能分类: 50/50 比例对分
-                let count = topology.len();
-                let half = count / 2;
-                for (i, c) in topology.iter().enumerate() {
-                    let bit = 1u64 << (c.id % 64);
-                    if i < (count - half) {
-                        game_mask |= bit;
-                    } else {
-                        system_mask |= bit;
+                let mut group_map: std::collections::HashMap<u32, Vec<usize>> = std::collections::HashMap::new();
+
+                for c in &topology {
+                    if c.id >= 64 {
+                        has_high_core = true;
+                        continue;
                     }
+                    group_map.entry(c.group_id).or_default().push(c.id);
+                }
+
+                if group_map.len() > 1 {
+                    let mut groups: Vec<(u32, Vec<usize>)> = group_map.into_iter().collect();
+                    groups.sort_by_key(|(_, cores)| usize::MAX - cores.len());
+
+                    if let Some((_, game_cores)) = groups.first() {
+                        for &core_id in game_cores {
+                            game_mask |= 1u64 << core_id;
+                        }
+                    }
+
+                    for (_, cores) in groups.into_iter().skip(1) {
+                        for core_id in cores {
+                            system_mask |= 1u64 << core_id;
+                        }
+                    }
+                } else {
+                    game_mask = all_mask;
+                    system_mask = all_mask;
                 }
             }
 
             // 安全兜底
-            if game_mask == 0 { game_mask = 0xFFFF; }
+            if all_mask == 0 {
+                all_mask = u64::MAX;
+            }
+            if game_mask == 0 { game_mask = all_mask; }
             if system_mask == 0 { system_mask = game_mask; }
+
+            if has_high_core {
+                tracing::warn!("Detected logical core id >= 64. Affinity masks are limited to 64 cores.");
+            }
 
             (game_mask, system_mask)
         }
         Err(e) => {
             tracing::error!("Failed to get topology for default masks: {}", e);
-            (0xFFFF, 0xFFFF)
+            (u64::MAX, u64::MAX)
         }
     }
 }
