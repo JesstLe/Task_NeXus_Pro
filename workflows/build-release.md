@@ -1,48 +1,46 @@
 ---
-description: Build and release portable EXE to tn_new folder
+description: 构建并发布便携版 EXE 到输出目录
 ---
 
-# Task_NeXus Release Build Workflow
+# Task_NeXus 发布构建流程
 
-## Versioning Rule
+## 版本号规则
 
-- **Initial Version**: V3.0.0
-- **Increment Rule**: 满10进1 (Decimal-like versioning)
-  - Patch (Z in X.Y.Z): 0-9, when reaching 10, reset to 0 and increment Minor.
-  - Minor (Y in X.Y.Z): 0-9, when reaching 10, reset to 0 and increment Major.
--  - Example: `3.0.9` → `3.3.0` → `3.3.9` → `3.4.0` → ... → `3.9.9` → `4.0.0`
+- 初始版本：V3.0.0
+- 递增规则：满 10 进 1（类十进制版本号）
+  - Patch（X.Y.Z 的 Z）：0-9，到 10 归零并将 Minor +1
+  - Minor（X.Y.Z 的 Y）：0-9，到 10 归零并将 Major +1
+  - 示例：`3.0.9` → `3.3.0` → `3.3.9` → `3.4.0` → … → `3.9.9` → `4.0.0`
 
-## Current Version
+## 当前版本
 
-**V3.3.0** (Released 2026-01-26)
+**V3.4.0**（发布于 2026-01-26）
 
-## Build Steps
+## 构建步骤
 
-1. **Update version in Cargo.toml** (if needed):
+1. 更新版本号（如需）：
    ```powershell
-   # Edit e:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\Cargo.toml
-   # Change: version = "X.Y.Z"
+   # 编辑 e:\Documents\WorkSpace\TN\src-tauri\Cargo.toml
+   # 修改：version = "X.Y.Z"
    ```
 
-2. **Build Release**:
-   // turbo
+2. 构建 Release：
    ```powershell
-   cd e:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2
-   npm run tauri build
+   cd e:\Documents\WorkSpace\TN
+   npm run tauri:build
    ```
 
-3. **Copy Portable EXE to Output Folder**:
-   // turbo
+3. 复制便携版 EXE 到输出目录：
    ```powershell
-   $version = "3.3.0"   
-   $src = "e:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\target\release\task-nexus.exe"
+   $version = "3.4.0"
+   $src = "e:\Documents\WorkSpace\TN\src-tauri\target\release\task-nexus.exe"
    $dest = "E:\Documents\WorkSpace\tn_new"
    if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force }
    Copy-Item $src "$dest\Task_NeXus_V$version.exe" -Force
    ```
 
-4. **Update this file** with the new current version after each release.
+4. 每次发布后，更新本文件的“当前版本”。
 
-## Output Location
+## 输出位置
 
 `E:\Documents\WorkSpace\tn_new\Task_NeXus_V{version}.exe`
