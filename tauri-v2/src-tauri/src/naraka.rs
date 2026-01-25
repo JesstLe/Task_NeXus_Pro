@@ -293,6 +293,110 @@ fn set_ptr(data: &mut serde_json::Value, ptr: &str, value: serde_json::Value) {
     cur[last] = value;
 }
 
+const NARAKA_TOP_KEYS: &[&str] = &["preset", "l22GraphicQualityLevel", "l22SystemQualitySetting"];
+
+const NARAKA_GRAPHIC_QUALITY_KEYS: &[&str] = &[
+    "m_modelQualityLevel",
+    "m_tessellationQualityLevel",
+    "m_visualEffectsQualityLevel",
+    "m_textureQualityLevel",
+    "m_shadowQualityLevel",
+    "m_volumetricLightLevel",
+    "m_cloudQualityLevel",
+    "m_aoLevel",
+    "m_SSRLevel",
+    "m_AALevel",
+    "m_PostProcessingLevel",
+    "m_LightingQualityLevel",
+];
+
+const NARAKA_SYSTEM_QUALITY_KEYS: &[&str] = &[
+    "renderScale",
+    "renderScaleStep",
+    "aaMode",
+    "checkboardRendering",
+    "upSamplingType",
+    "enableDlssDx12",
+    "enableDlssG",
+    "frameBoostDlssG",
+    "enableDlssRR",
+    "randomDiscardFactor",
+    "dlssMode",
+    "xessMode",
+    "xefgMode",
+    "dlssSharpness",
+    "lxFsr2Mode",
+    "fsr2Sharpness",
+    "lxFsr3Mode",
+    "enbaleFSR3FrameInterpolation",
+    "enableFSR3FrameInterpolation",
+    "nisQuality",
+    "fullScreenMode",
+    "resolutionWidth",
+    "resolutionHeight",
+    "frameRateLimit",
+    "vSyncCount",
+    "gamma",
+    "maxLuma",
+    "minLuma",
+    "paperWhite",
+    "mHDRMode",
+    "reflexMode",
+    "xellMode",
+    "antiLag2Enabled",
+    "vrsMode",
+    "colorBlindMode",
+    "colorBlindStrength",
+    "colorBlindQualityMode",
+    "nvHighlightsEnabled",
+    "styleMode",
+    "motionBlurEnabled",
+    "raytracingEnabled",
+    "raytracingAO",
+    "raytracingGI",
+    "raytracingReflection",
+    "raytracingShadow",
+    "raytracingBVHAllInOne",
+    "raytracingBVHActorCountMax",
+    "rtgiResolution",
+    "characterAdditionalPhysics1",
+    "xboxQualityOption",
+];
+
+fn reorder_keys(
+    mut obj: serde_json::Map<String, serde_json::Value>,
+    ordered_keys: &[&str],
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    for &k in ordered_keys {
+        if let Some(v) = obj.remove(k) {
+            out.insert(k.to_string(), v);
+        }
+    }
+    for (k, v) in obj {
+        out.insert(k, v);
+    }
+    out
+}
+
+fn reorder_naraka_quality_settings(mut data: serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(mut root) = data else {
+        return data;
+    };
+
+    if let Some(serde_json::Value::Object(gq)) = root.remove("l22GraphicQualityLevel") {
+        let gq = reorder_keys(gq, NARAKA_GRAPHIC_QUALITY_KEYS);
+        root.insert("l22GraphicQualityLevel".to_string(), serde_json::Value::Object(gq));
+    }
+
+    if let Some(serde_json::Value::Object(sq)) = root.remove("l22SystemQualitySetting") {
+        let sq = reorder_keys(sq, NARAKA_SYSTEM_QUALITY_KEYS);
+        root.insert("l22SystemQualitySetting".to_string(), serde_json::Value::Object(sq));
+    }
+
+    serde_json::Value::Object(reorder_keys(root, NARAKA_TOP_KEYS))
+}
+
 #[command]
 pub async fn naraka_apply_quality_patch(path: String, patch: NarakaQualityPatch) -> Result<(), String> {
     let path = PathBuf::from(path);
@@ -447,6 +551,7 @@ pub async fn naraka_apply_quality_patch(path: String, patch: NarakaQualityPatch)
         set_ptr(&mut data, "/l22GraphicQualityLevel/m_AALevel", serde_json::json!(v));
     }
 
+    let data = reorder_naraka_quality_settings(data);
     let out = serde_json::to_string(&data).map_err(|e| format!("序列化 JSON 失败: {e}"))?;
     fs::write(&path, out).map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(())

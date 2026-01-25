@@ -28,7 +28,7 @@
         }
     },
     "bundle": {
-        "active": false,
+        "active": true,
         "targets": [
             "msi",
             "nsis"
@@ -40,7 +40,11 @@
         "windows": {
             "certificateThumbprint": null,
             "digestAlgorithm": "sha256",
-            "timestampUrl": ""
+            "timestampUrl": "",
+            "webviewInstallMode": {
+                "type": "offlineInstaller",
+                "silent": true
+            }
         }
     }
 }
