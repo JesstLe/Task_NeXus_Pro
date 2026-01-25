@@ -119,7 +119,6 @@ export default function CoreGrid({
                             <div className="w-px h-6 bg-slate-200 mx-1"></div>
                         </>
                     )}
-                    <button onClick={onSelectAll} className="px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg">全选</button>
                     <button onClick={onSelectPhysical} className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg">物理核</button>
                     <button onClick={onSelectSMT} className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg">逻辑线程</button>
                     <button onClick={onSelectNone} className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-100 rounded-lg">清空</button>
@@ -147,11 +146,6 @@ export default function CoreGrid({
                 <div className="grid grid-cols-8 gap-2">{cores.map((_, i) => renderCore(i))}</div>
             )}
 
-            <div className="flex items-center gap-4 mt-4 text-xs text-slate-400">
-                <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-violet-500">{selectedCores.length}</span> 核心已选
-                </div>
-            </div>
         </div>
     );
 }

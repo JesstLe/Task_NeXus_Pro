@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -69,32 +69,26 @@ pub async fn check_expiration() -> TimeBombStatus {
         }
     }
 
-    // 如果无法获取网络时间，强制退出
-    let current_time = match network_time {
-        Some(t) => t,
-        None => {
-            // 网络检查失败，直接退出
-            std::process::exit(0);
-        }
+    let (current_local, verification_source) = match network_time {
+        Some(t) => (
+            DateTime::<Utc>::from_utc(t, Utc)
+                .with_timezone(&Local)
+                .naive_local(),
+            "Network (Baidu/MS)".to_string(),
+        ),
+        None => (Local::now().naive_local(), "System".to_string()),
     };
-
-    // 转换为本地时间进行对比 (expiry is roughly local midnight? Or just check date)
-    // Actually expiry is constructed as naive date. 
-    // network_time is UTC. We should add 8 hours for Beijing Time roughly or compare properly.
-    // Simplifying: Just compare UTC to UTC if possible, or Local to Local.
-    // Let's assume +8 for China since users are Chinese.
-    let current_local = current_time + chrono::Duration::hours(8); 
 
     let is_expired = current_local > expiry;
     let duration = expiry.signed_duration_since(current_local);
-    let days_remaining = duration.num_days();
+    let days_remaining = if is_expired { 0 } else { duration.num_days().max(0) };
 
     TimeBombStatus {
         is_expired,
         expiration_date: expiry.format("%Y-%m-%d").to_string(),
         current_date: current_local.format("%Y-%m-%d %H:%M:%S").to_string(),
-        days_remaining: if is_expired { 0 } else { days_remaining },
-        verification_source: "Network (Baidu/MS)".to_string(),
+        days_remaining,
+        verification_source,
     }
 }
 

@@ -14,51 +14,82 @@ export function useProcessData(initialProcesses: ProcessInfo[]) {
     useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
 
     useEffect(() => {
+        const hasTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
         let unlisten: any = null;
+        let unlistenCpu: any = null;
+        let unlistenMem: any = null;
         let mounted = true;
 
-        invoke<any[]>('get_processes').then(data => {
-            if (mounted && !pausedRef.current && data) {
-                setProcesses(data);
-                setLoading(false);
-            }
-            invoke('get_cpu_topology').then(setTopology as any).catch(console.error);
-        });
+        if (!hasTauri) {
+            setLoading(false);
+            return () => {
+                mounted = false;
+            };
+        }
 
-        const setupListen = async () => {
-            unlisten = await listen('process-update', (event) => {
-                if (mounted && !pausedRef.current) {
-                    setProcesses(event.payload as any[]);
+        invoke<any[]>('get_processes')
+            .then(data => {
+                if (mounted && !pausedRef.current && data) {
+                    setProcesses(data);
+                    setLoading(false);
+                }
+                return invoke('get_cpu_topology');
+            })
+            .then(setTopology as any)
+            .catch(err => {
+                console.error(err);
+                if (mounted) {
                     setLoading(false);
                 }
             });
-            const unlistenMem = await listen('memory-load-update', (event) => {
-                if (mounted && !pausedRef.current) {
-                    const sysMemPercent = event.payload as number;
-                    setHistory(prev => ({
-                        ...prev,
-                        memory: [...prev.memory, sysMemPercent].slice(-50)
-                    }));
+
+        const setupListen = async () => {
+            try {
+                unlisten = await listen('process-update', (event) => {
+                    if (mounted && !pausedRef.current) {
+                        setProcesses(event.payload as any[]);
+                        setLoading(false);
+                    }
+                });
+                unlistenCpu = await listen('cpu-load-update', (event) => {
+                    if (mounted && !pausedRef.current) {
+                        const payload = event.payload as number[];
+                        const total = Array.isArray(payload)
+                            ? payload.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0)
+                            : 0;
+                        const avg = payload.length > 0 ? total / payload.length : 0;
+                        const safe = Math.min(100, Math.max(0, avg));
+                        setHistory(prev => ({
+                            ...prev,
+                            cpu: [...prev.cpu, safe].slice(-50)
+                        }));
+                    }
+                });
+                unlistenMem = await listen('memory-load-update', (event) => {
+                    if (mounted && !pausedRef.current) {
+                        const sysMemPercent = event.payload as number;
+                        setHistory(prev => ({
+                            ...prev,
+                            memory: [...prev.memory, sysMemPercent].slice(-50)
+                        }));
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                if (mounted) {
+                    setLoading(false);
                 }
-            });
+            }
         };
         setupListen();
 
         return () => {
             mounted = false;
             if (unlisten) unlisten();
+            if (unlistenCpu) unlistenCpu();
+            if (unlistenMem) unlistenMem();
         };
     }, []);
-
-    useEffect(() => {
-        if (processes.length === 0 || isPaused) return;
-        const totalCpu = processes.reduce((acc, p) => acc + (p.cpu_usage || 0), 0);
-
-        setHistory(prev => ({
-            ...prev,
-            cpu: [...prev.cpu, Math.min(100, totalCpu)].slice(-50)
-        }));
-    }, [processes, isPaused]);
 
     return {
         processes,

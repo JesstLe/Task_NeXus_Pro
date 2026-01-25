@@ -11,8 +11,14 @@ static RESTRAINED_PIDS: Lazy<RwLock<HashSet<u32>>> = Lazy::new(|| RwLock::new(Ha
 // static LAST_ACTION_TIME: Lazy<RwLock<std::time::Instant>> =
 //     Lazy::new(|| RwLock::new(std::time::Instant::now()));
 
+fn initial_trim_time() -> std::time::Instant {
+    let now = std::time::Instant::now();
+    now.checked_sub(std::time::Duration::from_secs(3600))
+        .unwrap_or(now)
+}
+
 static LAST_TRIM_TIME: Lazy<RwLock<std::time::Instant>> =
-    Lazy::new(|| RwLock::new(std::time::Instant::now() - std::time::Duration::from_secs(3600)));
+    Lazy::new(|| RwLock::new(initial_trim_time()));
 
 /// Cache to store the last applied state per process to avoid redundant WinAPI calls.
 /// PID -> (AffinityMask, PriorityString)

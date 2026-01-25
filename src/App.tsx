@@ -42,8 +42,10 @@ function App() {
     const [toasts, setToasts] = useState<ToastInfo[]>([]);
     const [selectedPids, setSelectedPids] = useState<Set<number>>(new Set());
     const [topology, setTopology] = useState<LogicalCore[]>([]);
+    const hasTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
 
     useEffect(() => {
+        if (!hasTauri) return;
         invoke<LogicalCore[]>('get_cpu_topology').then(setTopology).catch(console.error);
     }, []);
     const [isActivated, setIsActivated] = useState(true);
@@ -74,6 +76,11 @@ function App() {
         async function init() {
             setLoading(true);
             setError(null);
+            if (!hasTauri) {
+                setError('请在桌面端运行该应用');
+                setLoading(false);
+                return;
+            }
             try {
                 const info = await invoke<CpuInfo>('get_cpu_info');
                 if (!info || !info.cores || info.cores <= 0) {
@@ -103,15 +110,15 @@ function App() {
                 const arch = getCpuArchitecture(info.model);
                 setCpuArch(arch);
 
-                // Default: select physical cores
-                const physicalCores = Array.from({ length: info.cores }, (_, i) => i).filter(i => i % 2 === 0);
-                setSelectedCores(physicalCores);
+                setSelectedCores([]);
             } catch (err) {
                 console.error('初始化失败:', err);
                 setError((err as any).message || '初始化失败');
             } finally {
                 setLoading(false);
-                handleScan();
+                if (hasTauri) {
+                    handleScan();
+                }
             }
         }
         init();
@@ -128,6 +135,7 @@ function App() {
 
     const handleScan = async () => {
         if (scanning) return;
+        if (!hasTauri) return;
         setScanning(true);
         setError(null);
 

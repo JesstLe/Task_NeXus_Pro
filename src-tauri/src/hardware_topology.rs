@@ -61,7 +61,7 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
         } else if info.Relationship == RelationNumaNode {
             let node = unsafe { info.Anonymous.NumaNode };
             let node_id = node.NodeNumber;
-            let mask = node.GroupMask.Mask;
+            let mask = unsafe { node.Anonymous.GroupMask.Mask };
             for i in 0..64 {
                 if (mask >> i) & 1 == 1 {
                     core_numa_group_map.insert(i, node_id);
