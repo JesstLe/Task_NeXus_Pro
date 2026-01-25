@@ -67,6 +67,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
     };
 
     const presetToQualityProfile = (preset: number): GameGraphicsSettings['qualityProfile'] => {
+        if (preset === -1) return 'custom';
         if (preset === 0) return 'very_low';
         if (preset === 1) return 'low';
         if (preset === 2) return 'medium';
@@ -76,7 +77,10 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
     };
 
     const qualityProfileToPreset = (profile: string): number | null => {
+        if (profile === 'competitive') return -1;
+        if (profile === 'custom') return -1;
         if (profile === 'very_low') return 0;
+        if (profile === 'lowest') return 1;
         if (profile === 'low') return 1;
         if (profile === 'medium') return 2;
         if (profile === 'high') return 3;
@@ -269,6 +273,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
         { id: 'medium', label: '中', sub: '预设：中' },
         { id: 'high', label: '高', sub: '预设：高' },
         { id: 'ultra', label: '极高', sub: '预设：极高' },
+        { id: 'custom', label: '自定义', sub: '预设：自定义' },
     ];
 
     const getSliderLabel = (val: number, type: 'quality' | 'tessellation') => {
@@ -355,7 +360,7 @@ export default function GameGraphicsPanel({ settings, onSettingChange }: GameGra
                     <Layers size={18} className="text-violet-500" />
                     全局画质方案 (QUALITY PROFILE)
                 </h4>
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                     {qualityProfiles.map((profile) => (
                         <button
                             key={profile.id}
