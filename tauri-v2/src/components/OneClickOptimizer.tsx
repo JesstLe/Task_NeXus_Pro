@@ -65,10 +65,12 @@ export default function OneClickOptimizer({ showToast }: OneClickOptimizerProps)
                     </div>
                     <div className="space-y-3 flex-1 mb-6">
                         <ul className="text-xs text-slate-500 space-y-2 list-disc list-inside">
+                            <li>键盘/鼠标 极速响应优化 (Keyboard/Mouse)</li>
+                            <li>禁用 Spectre/Meltdown 缓解</li>
+                            <li>禁用 Windows 进程缓解 (Process Mitigations)</li>
+                            <li>优化系统响应度 (SystemResponsiveness)</li>
                             <li>禁用动态时钟 (Tickless Kernel)</li>
                             <li>禁用 HPET (高精度事件计时器)</li>
-                            <li>禁用 USB 选择性暂停</li>
-                            <li>Win32PrioritySeparation 响应提权</li>
                         </ul>
                     </div>
                     <div className="flex gap-3 mt-auto">
@@ -103,11 +105,12 @@ export default function OneClickOptimizer({ showToast }: OneClickOptimizerProps)
                     </div>
                     <div className="space-y-3 flex-1 mb-6">
                         <ul className="text-xs text-slate-500 space-y-2 list-disc list-inside">
+                            <li>禁用系统遥测与数据收集 (Telemetry)</li>
+                            <li>禁用 USB/网卡 节能策略</li>
+                            <li>刷新 DNS 与重置 Winsock</li>
                             <li>禁用 TCP Nagle 算法 (NoDelay)</li>
                             <li>TcpAckFrequency = 1 (降低 Ping 值)</li>
                             <li>NetworkThrottlingIndex (解除限速)</li>
-                            <li>关闭网卡中断节流 (Interrupt Moderation)</li>
-                            <li>关闭流控制与节能以太网</li>
                         </ul>
                     </div>
                     <div className="flex gap-3 mt-auto">

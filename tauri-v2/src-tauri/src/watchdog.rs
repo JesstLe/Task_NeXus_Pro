@@ -16,7 +16,7 @@ static LAST_TRIM_TIME: Lazy<RwLock<std::time::Instant>> =
 
 /// Cache to store the last applied state per process to avoid redundant WinAPI calls.
 /// PID -> (AffinityMask, PriorityString)
-static LAST_APPLIED_STATE: Lazy<RwLock<std::collections::HashMap<u32, (u64, String)>>> =
+static LAST_APPLIED_STATE: Lazy<RwLock<std::collections::HashMap<u32, (u64, String, Option<u32>)>>> =
     Lazy::new(|| RwLock::new(std::collections::HashMap::new()));
 
 pub async fn check_and_trim_memory() {
@@ -61,12 +61,14 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
 
     // Use a budget to limit heavy operations per tick
     let mut operation_budget = 5;
+    let mut matched_pids: HashSet<u32> = HashSet::new();
 
     for p in processes {
         if operation_budget == 0 { break; }
 
         let name_lower = p.name.to_lowercase();
         if let Some(profile) = profiles.iter().find(|pr| pr.name.to_lowercase() == name_lower && pr.enabled) {
+            matched_pids.insert(p.pid);
             let mut changed = false;
 
             // 1. Check Priority
@@ -81,6 +83,7 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
             // 2. Check Affinity/Sets
             let is_soft = profile.mode == "soft";
             let target_mask = u64::from_str_radix(&profile.affinity, 16).unwrap_or(0);
+            let desired_cpu_limit = profile.cpu_limit_percent;
             
             // Normalize current affinity for comparison
             let current_mask = if p.cpu_affinity == "All" {
@@ -97,16 +100,19 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
                 current_mask != target_mask
             };
 
-            if needs_affinity_fix {
-                // Check cache first to avoid rapid re-application if OS hasn't updated yet
-                let mut cache = LAST_APPLIED_STATE.write();
-                if let Some((last_mask, _)) = cache.get(&p.pid) {
-                    if *last_mask == target_mask && !is_soft {
-                        // Skip if we already tried this exact mask recently
-                        continue;
-                    }
-                }
+            let cache_snapshot = {
+                let cache = LAST_APPLIED_STATE.read();
+                cache.get(&p.pid).cloned()
+            };
 
+            let mut skip_affinity_apply = false;
+            if let Some((last_mask, _, _)) = &cache_snapshot {
+                if *last_mask == target_mask && !is_soft {
+                    skip_affinity_apply = true;
+                }
+            }
+
+            if needs_affinity_fix && !skip_affinity_apply {
                 tracing::info!("Auto-Apply: Re-applying affinity for {} (PID {}) [Mode: {}]", p.name, p.pid, profile.mode);
                 if is_soft {
                     let mut core_ids = Vec::new();
@@ -119,15 +125,67 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
                 } else {
                     let _ = governor::set_process_affinity(p.pid, profile.affinity.clone()).await;
                 }
-                
-                cache.insert(p.pid, (target_mask, profile.priority.clone()));
                 changed = true;
             }
 
+            let last_limit = cache_snapshot.as_ref().and_then(|t| t.2);
+            if desired_cpu_limit != last_limit {
+                #[cfg(windows)]
+                {
+                    let res = if let Some(percent) = desired_cpu_limit {
+                        governor::set_cpu_rate_limit(p.pid, percent).await
+                    } else {
+                        governor::clear_cpu_rate_limit(p.pid).await
+                    };
+
+                    if let Err(e) = res {
+                        tracing::warn!("Auto-Apply: CPU limit apply failed for {} (PID {}): {}", p.name, p.pid, e);
+                    } else {
+                        changed = true;
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (desired_cpu_limit, last_limit);
+                }
+            }
+
             if changed {
+                let mut cache = LAST_APPLIED_STATE.write();
+                cache.insert(p.pid, (target_mask, profile.priority.clone(), desired_cpu_limit));
                 operation_budget -= 1;
             }
         }
+    }
+
+    let current_pids: HashSet<u32> = processes.iter().map(|p| p.pid).collect();
+    let to_clear: Vec<u32> = {
+        let cache = LAST_APPLIED_STATE.read();
+        cache
+            .iter()
+            .filter_map(|(pid, (_, _, limit))| {
+                if current_pids.contains(pid) && !matched_pids.contains(pid) && limit.is_some() {
+                    Some(*pid)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    for pid in &to_clear {
+        #[cfg(windows)]
+        {
+            let _ = governor::clear_cpu_rate_limit(*pid).await;
+        }
+    }
+
+    {
+        let mut cache = LAST_APPLIED_STATE.write();
+        for pid in to_clear {
+            cache.remove(&pid);
+        }
+        cache.retain(|pid, _| current_pids.contains(pid));
     }
 }
 
@@ -353,7 +411,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
             if target_mask > 0 && current_mask != target_mask {
                 // Check cache
                 let mut cache = LAST_APPLIED_STATE.write();
-                let should_apply = if let Some((last, _)) = cache.get(&p.pid) {
+                let should_apply = if let Some((last, _, _)) = cache.get(&p.pid) {
                     *last != target_mask
                 } else {
                     true
@@ -363,7 +421,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                     let mask_hex = format!("{:X}", target_mask);
                     tracing::info!("DefaultRules: Mapping game {} to 0x{}", p.name, mask_hex);
                     let _ = governor::set_process_affinity(p.pid, mask_hex).await;
-                    cache.insert(p.pid, (target_mask, rules.game_priority.clone()));
+                    cache.insert(p.pid, (target_mask, rules.game_priority.clone(), None));
                     changed = true;
                 }
             }
@@ -393,7 +451,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                     if p.cpu_usage > 0.1 || p.priority != "Normal" {
                         // Check cache
                         let mut cache = LAST_APPLIED_STATE.write();
-                        let should_apply = if let Some((last, _)) = cache.get(&p.pid) {
+                        let should_apply = if let Some((last, _, _)) = cache.get(&p.pid) {
                             *last != target_mask
                         } else {
                             true
@@ -403,7 +461,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                             let mask_hex = format!("{:X}", target_mask);
                             tracing::info!("DefaultRules: Mapping system process {} to 0x{}", p.name, mask_hex);
                             let _ = governor::set_process_affinity(p.pid, mask_hex).await;
-                            cache.insert(p.pid, (target_mask, rules.system_priority.clone()));
+                            cache.insert(p.pid, (target_mask, rules.system_priority.clone(), None));
                             changed = true;
                         }
                     }

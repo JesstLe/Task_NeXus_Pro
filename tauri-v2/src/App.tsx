@@ -6,10 +6,11 @@ import ControlBar from './components/ControlBar';
 import SettingsPanel from './components/settings/SettingsPanel';
 import ManualOptimizer from './components/ManualOptimizer';
 import AdvancedPanel from './components/AdvancedPanel';
+import GameGraphicsPanel from './components/GameGraphicsPanel';
 import Toast, { ToastContainer } from './components/Toast';
 import ActivationDialog from './components/ActivationDialog';
 import OneClickOptimizer from './components/OneClickOptimizer';
-import { Activity, Settings, Zap, SlidersHorizontal, AlertOctagon } from 'lucide-react';
+import { Activity, Settings, Zap, SlidersHorizontal, AlertOctagon, Monitor } from 'lucide-react';
 import { getCpuArchitecture } from './data/cpuDatabase';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -197,7 +198,8 @@ function App() {
                 const settingNames: Record<string, string> = {
                     launchOnStartup: '开机自启动',
                     closeToTray: '关闭时最小化',
-                    defaultRules: '默认规则'
+                    defaultRules: '默认规则',
+                    graphicsSettings: '游戏画面设置'
                 };
                 const settingName = settingNames[key] || key;
 
@@ -210,6 +212,11 @@ function App() {
                         showToast(`自启动设置失败: ${err}`, 'error');
                         return; // Stop if autostart setup failed
                     }
+                }
+
+                if (key === 'graphicsSettings') {
+                    showToast(`${settingName}已保存`, 'success');
+                    return;
                 }
 
                 const isEnabled = typeof value === 'object' && value !== null ? !!value.enabled : !!value;
@@ -410,6 +417,9 @@ function App() {
                     <button onClick={() => setActiveTab('one_click')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'one_click' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <Zap size={16} /><span>一键优化</span>
                     </button>
+                    <button onClick={() => setActiveTab('graphics')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'graphics' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <Monitor size={16} /><span>游戏画面</span>
+                    </button>
                     {/* <button onClick={() => setActiveTab('optimizer')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <SlidersHorizontal size={16} /><span>自定义线程序列调试</span>
                     </button> */}
@@ -468,6 +478,13 @@ function App() {
 
                     {activeTab === 'one_click' && (
                         <OneClickOptimizer showToast={showToast} />
+                    )}
+
+                    {activeTab === 'graphics' && (
+                        <GameGraphicsPanel
+                            settings={settings}
+                            onSettingChange={handleSettingChange}
+                        />
                     )}
 
                     {activeTab === 'optimizer' && (

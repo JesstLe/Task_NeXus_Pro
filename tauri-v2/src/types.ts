@@ -54,6 +54,45 @@ export interface SmartTrimSettings {
     mode: 'standby-only' | 'working-set';
 }
 
+export interface GameGraphicsSettings {
+    qualityProfile: string;
+    windowMode: string;
+    resolution: string;
+    fpsCap: number;
+    renderScale: number;
+    dlssMode: string;
+    reflexMode: 'off' | 'on' | 'boost';
+    vSyncCount: number;
+    aaMode: number;
+    upSamplingType: number;
+    checkboardRendering: boolean;
+    dlssSharpness: number;
+    enableDlssG: boolean;
+    frameBoostDlssG: number;
+    enableDlssRR: boolean;
+    xessMode: number;
+    xefgMode: number;
+    xellMode: number;
+    fsr2Mode: number;
+    fsr2Sharpness: number;
+    fsr3Mode: number;
+    enableFsr3FrameInterpolation: boolean;
+    nisQuality: number;
+    gamma: number;
+    hdrMode: number;
+    motionBlurEnabled: boolean;
+    styleMode: number;
+    raytracingEnabled: boolean;
+    optimize8to4: boolean;
+    stoneMilk: boolean;
+    modelDetail: number;
+    tessellation: number;
+    textureQuality: number;
+    effectQuality: number;
+    lightingQuality: number;
+    shadowQuality: number;
+}
+
 export interface AppSettings {
     profiles?: ProcessProfile[];
     defaultRules?: {
@@ -70,6 +109,7 @@ export interface AppSettings {
     closeToTray?: boolean;
     startMinimized?: boolean;
     mode?: string;
+    graphicsSettings?: GameGraphicsSettings;
 }
 
 export interface ToastInfo {

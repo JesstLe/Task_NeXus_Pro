@@ -9,9 +9,15 @@ use std::collections::HashMap;
 
 #[cfg(windows)]
 use windows::{Win32::Foundation::*, Win32::System::ProcessStatus::*, Win32::System::Threading::*};
+#[cfg(windows)]
+use windows::Win32::System::JobObjects::*;
 
 /// 上一次的 CPU 时间记录 (用于计算 CPU 增量)
 static LAST_CPU_TIMES: Lazy<RwLock<HashMap<u32, (u64, u64)>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+#[cfg(windows)]
+static CPU_LIMIT_JOBS: Lazy<RwLock<HashMap<u32, isize>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// 启用进程的调试权限 (SeDebugPrivilege)
@@ -213,6 +219,92 @@ pub async fn set_priority(pid: u32, level: PriorityLevel) -> AppResult<()> {
             .map_err(|e| AppError::SystemError(format!("SetPriorityClass failed: {}", e)))?;
 
         let _ = CloseHandle(handle);
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+#[cfg(windows)]
+pub async fn set_cpu_rate_limit(pid: u32, percent: u32) -> AppResult<()> {
+    if !(1..=100).contains(&percent) {
+        return Err(AppError::SystemError("CPU 上限百分比必须在 1-100 之间".to_string()));
+    }
+
+    tokio::task::spawn_blocking(move || unsafe {
+        let cpu_rate: u32 = (percent * 100).min(10000).max(1);
+
+        let mut jobs = CPU_LIMIT_JOBS.write();
+        let job_handle = match jobs.get(&pid).copied() {
+            Some(raw) if raw != 0 => HANDLE(raw as *mut core::ffi::c_void),
+            _ => {
+                let h = CreateJobObjectW(None, None).map_err(|e| {
+                    AppError::SystemError(format!("CreateJobObject 失败: {}", e))
+                })?;
+                jobs.insert(pid, h.0 as isize);
+                h
+            }
+        };
+
+        let process_handle =
+            OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, pid).map_err(|_| {
+                AppError::ProcessNotFound(pid)
+            })?;
+
+        if let Err(e) = AssignProcessToJobObject(job_handle, process_handle) {
+            let _ = CloseHandle(process_handle);
+            return Err(AppError::SystemError(format!(
+                "AssignProcessToJobObject 失败（进程可能已在其他 Job 中）: {}",
+                e
+            )));
+        }
+
+        let mut info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        info.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        info.Anonymous.CpuRate = cpu_rate;
+
+        let res = SetInformationJobObject(
+            job_handle,
+            JobObjectCpuRateControlInformation,
+            &info as *const _ as *const core::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+        );
+
+        let _ = CloseHandle(process_handle);
+
+        res.map_err(|e| AppError::SystemError(format!("SetInformationJobObject 失败: {}", e)))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+#[cfg(windows)]
+pub async fn clear_cpu_rate_limit(pid: u32) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || unsafe {
+        let mut jobs = CPU_LIMIT_JOBS.write();
+        let job_handle = match jobs.remove(&pid) {
+            Some(raw) if raw != 0 => HANDLE(raw as *mut core::ffi::c_void),
+            Some(_) => return Ok(()),
+            None => return Ok(()),
+        };
+
+        if job_handle.is_invalid() {
+            return Ok(());
+        }
+
+        let mut info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        info.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL(0);
+        info.Anonymous.CpuRate = 0;
+
+        let _ = SetInformationJobObject(
+            job_handle,
+            JobObjectCpuRateControlInformation,
+            &info as *const _ as *const core::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+        );
+
+        let _ = CloseHandle(job_handle);
         Ok(())
     })
     .await

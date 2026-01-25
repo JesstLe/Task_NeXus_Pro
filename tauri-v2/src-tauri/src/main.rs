@@ -19,6 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::os::windows::process::CommandExt;
 
 mod optimizer;
+mod naraka;
 
 // ============================================================================
 // Tauri Commands - CPU 信息
@@ -243,6 +244,38 @@ async fn set_process_priority(pid: u32, priority: String) -> Result<bool, String
         .await
         .map(|_| true)
         .map_err(|e: AppError| e.to_string())
+}
+
+#[tauri::command]
+async fn set_process_cpu_limit(pid: u32, percent: u32) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        governor::set_cpu_rate_limit(pid, percent)
+            .await
+            .map(|_| true)
+            .map_err(|e: AppError| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (pid, percent);
+        Err("仅支持 Windows 平台".to_string())
+    }
+}
+
+#[tauri::command]
+async fn clear_process_cpu_limit(pid: u32) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        governor::clear_cpu_rate_limit(pid)
+            .await
+            .map(|_| true)
+            .map_err(|e: AppError| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        Err("仅支持 Windows 平台".to_string())
+    }
 }
 
 /// 清理进程内存
@@ -715,6 +748,8 @@ pub fn run() {
             set_process_cpu_sets,
             get_process_cpu_sets,
             set_process_priority,
+            set_process_cpu_limit,
+            clear_process_cpu_limit,
             trim_process_memory,
             terminate_process,
             open_file_location,
@@ -748,6 +783,9 @@ pub fn run() {
             advanced_affinity::apply_cascading_affinity,
             import_config_file,
             export_config_file,
+            naraka::naraka_parse_quality_settings,
+            naraka::naraka_validate_quality_settings,
+            naraka::naraka_apply_quality_patch,
             // 窗口控制
             window_minimize,
             window_toggle_maximize,
@@ -788,4 +826,3 @@ pub fn run() {
 fn main() {
     run();
 }
-

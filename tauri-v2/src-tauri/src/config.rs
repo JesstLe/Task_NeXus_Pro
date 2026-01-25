@@ -159,6 +159,13 @@ pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<
                     cfg.license = None;
                 }
             }
+            "graphicsSettings" => {
+                if value.is_null() {
+                    cfg.graphics_settings = None;
+                } else {
+                    cfg.graphics_settings = Some(value);
+                }
+            }
             "width" => {
                 if let Some(v) = value.as_u64() {
                     cfg.width = v as u32;

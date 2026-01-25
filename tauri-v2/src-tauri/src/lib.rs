@@ -226,6 +226,8 @@ pub struct ProcessProfile {
     pub mode: String,
     /// 优先级
     pub priority: String,
+    #[serde(default)]
+    pub cpu_limit_percent: Option<u32>,
     /// 优先核心 (可选)
     #[serde(alias = "primary_core")]
     pub primary_core: Option<u32>,
@@ -356,6 +358,9 @@ pub struct AppConfig {
     pub throttle_list: Vec<String>,
     /// 授权许可
     pub license: Option<String>,
+    /// 永劫无间画质页配置 (前端用)
+    #[serde(default)]
+    pub graphics_settings: Option<serde_json::Value>,
 }
 
 impl Default for AppConfig {
@@ -405,6 +410,7 @@ impl Default for AppConfig {
             pro_balance: ProBalanceConfig::default(),
             throttle_list: Vec::new(),
             license: None,
+            graphics_settings: None,
         }
     }
 }
