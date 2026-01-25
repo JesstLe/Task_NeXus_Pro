@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Nexus | 尊享版授权生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.5);
+            --bg: #020617;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .glass-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .glow-input:focus {
+            box-shadow: 0 0 20px var(--primary-glow);
+            border-color: var(--primary);
+        }
+
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.15) 0%, transparent 50%);
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-slide-up {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-mesh"></div>
+
+    <div class="glass-card w-full max-w-lg rounded-[2.5rem] p-10 animate-slide-up">
+        <div class="flex items-center gap-4 mb-10">
+            <div
+                class="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-2xl font-extrabold tracking-tight">Task Nexus</h1>
+                <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase">Ultimate License Gen</p>
+            </div>
+        </div>
+
+        <div class="space-y-8">
+            <div class="space-y-3">
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">用户机器码 (Machine
+                    Code)</label>
+                <input type="text" id="machineCode" placeholder="例如: A1B2-C3D4-E5F6"
+                    class="w-full bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-xl outline-none transition-all glow-input uppercase">
+            </div>
+
+            <div class="flex justify-center">
+                <button onclick="generate()"
+                    class="group relative px-8 py-4 bg-white text-black font-black rounded-2xl hover:bg-blue-500 hover:text-white transition-all transform active:scale-95 flex items-center gap-3 overflow-hidden">
+                    <span class="relative z-10 uppercase tracking-tighter text-lg">生成授权密匙</span>
+                    <svg xmlns="http://www.w3.org/2000/svg"
+                        class="w-5 h-5 relative z-10 transition-transform group-hover:rotate-12" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </button>
+            </div>
+
+            <div id="resultContainer" class="hidden space-y-3 pt-4 animate-slide-up">
+                <label class="text-xs font-bold text-blue-400 uppercase tracking-widest ml-1">生成的激活码 (Activation
+                    Key)</label>
+                <div class="relative">
+                    <input type="text" id="activationCode" readOnly
+                        class="w-full bg-blue-500/10 border border-blue-500/30 rounded-2xl px-6 py-5 text-blue-400 font-mono text-2xl outline-none text-center tracking-[0.3em] font-black">
+                    <button onclick="copyResult()"
+                        class="absolute right-4 top-4 p-2 bg-blue-500/20 hover:bg-blue-500/40 rounded-xl text-blue-400 transition-all active:scale-90">
+                        <svg id="copyIcon" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                    </button>
+                </div>
+                <p class="text-center text-xs text-slate-500 font-medium">生成后请通过私信或邮件分发给用户</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SECRET = "TN_2024_K7x9Qm3Wp5Yz8Rv2";
+
+        async function hmacSha256(key, data) {
+            const encoder = new TextEncoder();
+            const keyData = encoder.encode(key);
+            const msgData = encoder.encode(data);
+
+            const cryptoKey = await crypto.subtle.importKey(
+                "raw", keyData,
+                { name: "HMAC", hash: "SHA-256" },
+                false, ["sign"]
+            );
+
+            const signature = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
+            return Array.from(new Uint8Array(signature))
+                .map(b => b.toString(16).padStart(2, "0"))
+                .join("");
+        }
+
+        async function generate() {
+            const machineCode = document.getElementById('machineCode').value.trim().toUpperCase();
+            if (!machineCode) {
+                alert("请输入机器码");
+                return;
+            }
+
+            const hash = await hmacSha256(SECRET, machineCode);
+            const activationCode = hash.substring(0, 16).toUpperCase();
+
+            document.getElementById('activationCode').value = activationCode;
+            document.getElementById('resultContainer').classList.remove('hidden');
+        }
+
+        function copyResult() {
+            const code = document.getElementById('activationCode');
+            code.select();
+            document.execCommand('copy');
+
+            const icon = document.getElementById('copyIcon');
+            const originalPath = icon.innerHTML;
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+            setTimeout(() => {
+                icon.innerHTML = originalPath;
+            }, 2000);
+        }
+    </script>
+</body>
+
+</html>

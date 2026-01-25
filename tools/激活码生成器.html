@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Nexus 激活码生成器</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 450px;
+      width: 100%;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    .logo {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .logo svg { fill: white; width: 32px; height: 32px; }
+    h1 { color: #1e293b; font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 30px; }
+    label { display: block; color: #475569; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 16px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      transition: all 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .input-group { margin-bottom: 24px; }
+    button {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3); }
+    button:active { transform: translateY(0); }
+    .result {
+      margin-top: 24px;
+      padding: 20px;
+      background: #f0fdf4;
+      border: 2px solid #86efac;
+      border-radius: 12px;
+      display: none;
+    }
+    .result.error { background: #fef2f2; border-color: #fca5a5; }
+    .result-label { color: #166534; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+    .result.error .result-label { color: #991b1b; }
+    .result-value {
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 24px;
+      font-weight: bold;
+      color: #15803d;
+      letter-spacing: 3px;
+      word-break: break-all;
+    }
+    .result.error .result-value { color: #dc2626; font-size: 14px; letter-spacing: normal; }
+    .copy-btn {
+      margin-top: 12px;
+      padding: 10px 20px;
+      background: #166534;
+      font-size: 14px;
+      width: auto;
+      display: inline-block;
+    }
+    .copy-btn:hover { background: #15803d; }
+    .footer { margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <h1>激活码生成器</h1>
+    <p class="subtitle">输入用户机器码，生成对应的激活码</p>
+    
+    <div class="input-group">
+      <label for="machineId">用户机器码</label>
+      <input type="text" id="machineId" placeholder="例如: A1B2C3D4E5F6G7H8" maxlength="16" autocomplete="off">
+    </div>
+    
+    <button onclick="generateKey()">生成激活码</button>
+    
+    <div class="result" id="result">
+      <div class="result-label">激活码</div>
+      <div class="result-value" id="licenseKey"></div>
+      <button class="copy-btn" onclick="copyKey()">复制激活码</button>
+    </div>
+    
+    <div class="footer">
+      Task Nexus License Generator v1.0<br>
+      仅供软件作者使用，请勿泄露
+    </div>
+  </div>
+
+  <script>
+    // 许可证密钥 - 必须与 main.js 中保持一致！
+    const LICENSE_SECRET = 'TN_2024_K7x9Qm3Wp5Yz8Rv2';
+    
+    async function hmacSha256(key, message) {
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(key);
+      const messageData = encoder.encode(message);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+      );
+      
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+      const hashArray = Array.from(new Uint8Array(signature));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      return hashHex.substring(0, 16).toUpperCase();
+    }
+    
+    async function generateKey() {
+      const machineId = document.getElementById('machineId').value.trim().toUpperCase();
+      const resultEl = document.getElementById('result');
+      const keyEl = document.getElementById('licenseKey');
+      
+      if (!machineId || machineId.length < 8) {
+        resultEl.className = 'result error';
+        resultEl.style.display = 'block';
+        keyEl.textContent = '请输入有效的机器码（至少8位）';
+        return;
+      }
+      
+      try {
+        const licenseKey = await hmacSha256(LICENSE_SECRET, machineId);
+        resultEl.className = 'result';
+        resultEl.style.display = 'block';
+        keyEl.textContent = licenseKey;
+      } catch (e) {
+        resultEl.className = 'result error';
+        resultEl.style.display = 'block';
+        keyEl.textContent = '生成失败: ' + e.message;
+      }
+    }
+    
+    function copyKey() {
+      const key = document.getElementById('licenseKey').textContent;
+      navigator.clipboard.writeText(key).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = '已复制！';
+        setTimeout(() => btn.textContent = '复制激活码', 2000);
+      });
+    }
+    
+    // 回车键触发生成
+    document.getElementById('machineId').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') generateKey();
+    });
+  </script>
+</body>
+</html>

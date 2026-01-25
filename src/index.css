@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .drag {
+    -webkit-app-region: drag;
+  }
+}
+
+body {
+  @apply bg-gradient-to-br from-slate-50 via-white to-violet-50 text-slate-800;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-violet-200 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-violet-300;
+}
+
+/* Glass effect utility */
+.glass {
+  @apply bg-white/70 backdrop-blur-xl border border-white/20;
+}
