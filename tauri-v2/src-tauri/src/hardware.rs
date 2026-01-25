@@ -327,14 +327,69 @@ pub async fn detect_gpu() -> AppResult<crate::GpuInfo> {
     use crate::{GpuInfo, GpuVendor};
 
     tokio::task::spawn_blocking(|| {
-        // 使用 sysinfo 或 WMI 获取 GPU 信息
-        // 这里简化处理，实际应该调用 SetupAPI 或 WMI
+        use windows::core::PCWSTR;
+        use windows::Win32::Graphics::Gdi::{EnumDisplayDevicesW, DISPLAY_DEVICEW};
 
-        // 暂时返回 Unknown
-        Ok(GpuInfo {
-            vendor: GpuVendor::Unknown,
-            name: "Unknown GPU".to_string(),
-        })
+        fn wide_to_string(buf: &[u16]) -> String {
+            let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            String::from_utf16_lossy(&buf[..end]).trim().to_string()
+        }
+
+        fn vendor_from_id_and_name(id: &str, name: &str) -> GpuVendor {
+            let upper_id = id.to_ascii_uppercase();
+            if upper_id.contains("VEN_10DE") || name.to_ascii_uppercase().contains("NVIDIA") {
+                return GpuVendor::NVIDIA;
+            }
+            if upper_id.contains("VEN_1002") || name.to_ascii_uppercase().contains("AMD") || name.to_ascii_uppercase().contains("RADEON") {
+                return GpuVendor::AMD;
+            }
+            if upper_id.contains("VEN_8086") || name.to_ascii_uppercase().contains("INTEL") {
+                return GpuVendor::Intel;
+            }
+            GpuVendor::Unknown
+        }
+
+        let mut index: u32 = 0;
+        let mut best_name: Option<String> = None;
+        let mut best_vendor: Option<GpuVendor> = None;
+
+        loop {
+            let mut device = DISPLAY_DEVICEW::default();
+            device.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
+            let ok = unsafe { EnumDisplayDevicesW(PCWSTR::null(), index, &mut device, 0) };
+            if !ok.as_bool() {
+                break;
+            }
+
+            let name = wide_to_string(&device.DeviceString);
+            let id = wide_to_string(&device.DeviceID);
+            let vendor = vendor_from_id_and_name(&id, &name);
+
+            if !name.is_empty() {
+                if vendor != GpuVendor::Unknown {
+                    return Ok(GpuInfo { vendor, name });
+                }
+
+                if best_name.is_none() {
+                    best_name = Some(name);
+                    best_vendor = Some(vendor);
+                }
+            }
+
+            index += 1;
+        }
+
+        if let Some(name) = best_name {
+            Ok(GpuInfo {
+                vendor: best_vendor.unwrap_or(GpuVendor::Unknown),
+                name: if name.is_empty() { "Unknown GPU".to_string() } else { name },
+            })
+        } else {
+            Ok(GpuInfo {
+                vendor: GpuVendor::Unknown,
+                name: "Unknown GPU".to_string(),
+            })
+        }
     })
     .await
     .map_err(|e| AppError::SystemError(e.to_string()))?

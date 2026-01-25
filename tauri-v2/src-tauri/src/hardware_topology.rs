@@ -6,8 +6,8 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use windows::Win32::System::SystemInformation::{
-    GetLogicalProcessorInformationEx, RelationAll, RelationCache, RelationProcessorCore,
-    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
+    GetLogicalProcessorInformationEx, RelationAll, RelationCache, RelationNumaNode,
+    RelationProcessorCore, SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -32,26 +32,39 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
     let info_list = get_logical_processor_info_ex()?;
 
     // 2. 分析缓存 (Step A: Cache Analysis - Crucial for AMD)
-    // Map: GroupMask -> L3 Cache Size (bytes)
     let mut l3_cache_map: HashMap<usize, u64> = HashMap::new();
-    // Map: Logical Processor ID -> Group ID (CCD approximation via Cache GroupMask)
-    let mut core_group_map: HashMap<usize, usize> = HashMap::new();
+    let mut core_l3_mask_map: HashMap<usize, usize> = HashMap::new();
+    let mut core_cache_group_map: HashMap<usize, u32> = HashMap::new();
+    let mut core_numa_group_map: HashMap<usize, u32> = HashMap::new();
+    let mut cache_group_ids: HashMap<usize, u32> = HashMap::new();
+    let mut next_cache_group_id: u32 = 0;
 
     for info in &info_list {
         if info.Relationship == RelationCache {
             let cache = unsafe { info.Anonymous.Cache };
             if cache.Level == 3 {
-                // L3 Cache
-                // Fix: Access GroupMask via Anonymous union
                 let mask = unsafe { cache.Anonymous.GroupMask.Mask };
                 let size = cache.CacheSize as u64;
                 l3_cache_map.insert(mask, size);
-
-                // 将 mask 下的所有核心映射到这个 mask (作为 GroupID/CCD ID)
+                let group_id = *cache_group_ids.entry(mask).or_insert_with(|| {
+                    let id = next_cache_group_id;
+                    next_cache_group_id = next_cache_group_id.saturating_add(1);
+                    id
+                });
                 for i in 0..64 {
                     if (mask >> i) & 1 == 1 {
-                        core_group_map.insert(i, mask);
+                        core_l3_mask_map.insert(i, mask);
+                        core_cache_group_map.insert(i, group_id);
                     }
+                }
+            }
+        } else if info.Relationship == RelationNumaNode {
+            let node = unsafe { info.Anonymous.NumaNode };
+            let node_id = node.NodeNumber;
+            let mask = node.GroupMask.Mask;
+            for i in 0..64 {
+                if (mask >> i) & 1 == 1 {
+                    core_numa_group_map.insert(i, node_id);
                 }
             }
         }
@@ -113,7 +126,7 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
         // AMD V-Cache 判断逻辑
         if has_large_l3 {
             // 找到该核心所属的 Cache Group
-            if let Some(&group_mask) = core_group_map.get(&core.id) {
+            if let Some(&group_mask) = core_l3_mask_map.get(&core.id) {
                 if let Some(&cache_size) = l3_cache_map.get(&group_mask) {
                     if cache_size > vcache_threshold {
                         core_type = CoreType::VCache;
@@ -142,7 +155,13 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
         }
 
         // 获取简单的 Group ID (使用 Cache Mask 作为 ID 的一部分，简化处理)
-        let group_id = *core_group_map.get(&core.id).unwrap_or(&0) as u32;
+        let group_id = if let Some(id) = core_numa_group_map.get(&core.id) {
+            *id
+        } else if let Some(id) = core_cache_group_map.get(&core.id) {
+            *id
+        } else {
+            0
+        };
 
         logical_cores.push(LogicalCore {
             id: core.id,

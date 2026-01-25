@@ -16,6 +16,10 @@ use windows::Win32::Foundation::*;
 // use windows::Win32::System::ProcessStatus::*;
 #[cfg(windows)]
 use windows::Win32::System::Threading::*; // For GetProcessMemoryInfo if needed, or stick to sysinfo for basic mem
+#[cfg(windows)]
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+};
 
 // Shared state for CPU usage calculation
 // static LAST_CPU_TIMES: Lazy<RwLock<HashMap<u32, u64>>> = Lazy::new(|| RwLock::new(HashMap::new()));
@@ -189,6 +193,73 @@ impl ProcessMonitor {
 
 #[cfg(windows)]
 fn get_process_details_win(pid: u32) -> (String, String, u32) {
+    fn format_affinity_mask(process_mask: usize, system_mask: usize) -> String {
+        if process_mask == system_mask {
+            return "All".to_string();
+        }
+
+        let mut ranges = Vec::new();
+        let mut start: Option<usize> = None;
+
+        for i in 0..64 {
+            let set = (process_mask >> i) & 1 == 1;
+            match (set, start) {
+                (true, None) => start = Some(i),
+                (false, Some(s)) => {
+                    if s == i - 1 {
+                        ranges.push(format!("{}", s));
+                    } else {
+                        ranges.push(format!("{}-{}", s, i - 1));
+                    }
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(s) = start {
+            if s == 63 {
+                ranges.push(format!("{}", s));
+            } else {
+                ranges.push(format!("{}-{}", s, 63));
+            }
+        }
+
+        if ranges.is_empty() {
+            format!("{:#x}", process_mask)
+        } else {
+            ranges.join(",")
+        }
+    }
+
+    fn count_threads(pid: u32) -> u32 {
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if snapshot.is_err() {
+                return 0;
+            }
+            let snapshot = snapshot.unwrap();
+            let mut entry = THREADENTRY32 {
+                dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+                ..Default::default()
+            };
+            let mut count = 0u32;
+            if Thread32First(snapshot, &mut entry).is_ok() {
+                loop {
+                    if entry.th32OwnerProcessID == pid {
+                        count += 1;
+                    }
+                    entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+                    if Thread32Next(snapshot, &mut entry).is_err() {
+                        break;
+                    }
+                }
+            }
+            let _ = CloseHandle(snapshot);
+            count
+        }
+    }
+
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
 
@@ -206,28 +277,12 @@ fn get_process_details_win(pid: u32) -> (String, String, u32) {
             }
             .to_string();
 
-            // Affinity
             let mut process_mask: usize = 0;
             let mut system_mask: usize = 0;
             let _ = GetProcessAffinityMask(handle, &mut process_mask, &mut system_mask);
 
-            // Format Affinity (e.g., "0-15" or Hex)
-            // If full mask (system_mask), say "All"
-            let affinity = if process_mask == system_mask {
-                "All".to_string()
-            } else {
-                format!("{:#x}", process_mask) // Simple hex for now, range logic is complex
-            };
-
-            // Thread Count (GetProcessHandleCount is NOT thread count. We need NtQuery... or Toolhelp32)
-            // Using sysinfo's thread count is easier if it worked, but let's try Toolhelp32 or just return 0 for now to be safe if complex.
-            // Actually, sysinfo might not expose it easily.
-            // Let's stick to a placeholder 0 or simple lookup if we can.
-            // For now, let's just return 0 to avoid complexity, or try a quick WinAPI approach.
-            // Actually, `GetProcessTimes`? No.
-            // We can leave thread_count as 0 for this iteration or use a crate feature?
-            // Let's hardcode 0 to pass compilation first, then improve.
-            let thread_count = 0;
+            let affinity = format_affinity_mask(process_mask, system_mask);
+            let thread_count = count_threads(pid);
 
             let _ = CloseHandle(handle);
             return (priority, affinity, thread_count);

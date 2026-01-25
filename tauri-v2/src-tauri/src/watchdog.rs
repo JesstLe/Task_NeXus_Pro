@@ -426,7 +426,7 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
         (0, 0)
     };
 
-    let mut operation_budget = 5;
+    let mut operation_budget = processes.len();
 
     for p in processes {
         if operation_budget == 0 { break; }
