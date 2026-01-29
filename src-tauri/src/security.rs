@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 // Time Bomb Logic
 // ============================================================================
 
-// 预设截止日期：2026年2月1日
-const EXPIRATION_DATE: (i32, u32, u32) = (2026, 2, 1);
+// 预设截止日期：2026-02-28
+const EXPIRATION_DATE: (i32, u32, u32) = (2026, 2, 28);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeBombStatus {
