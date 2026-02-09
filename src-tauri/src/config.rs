@@ -152,6 +152,18 @@ pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<
                     cfg.pro_balance = config;
                 }
             }
+            "autoEnforceEnabled" => {
+                if let Some(v) = value.as_bool() {
+                    cfg.auto_enforce_enabled = v;
+                }
+            }
+            "networkOptSnapshot" => {
+                if value.is_null() {
+                    cfg.network_opt_snapshot = None;
+                } else {
+                    cfg.network_opt_snapshot = Some(value);
+                }
+            }
             "license" => {
                 if let Some(v) = value.as_str() {
                     cfg.license = Some(v.to_string());

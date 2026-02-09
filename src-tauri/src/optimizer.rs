@@ -4,6 +4,7 @@ use std::os::windows::process::CommandExt;
 use winreg::enums::*;
 use winreg::RegKey;
 use task_nexus_lib::{AppError, AppResult};
+use task_nexus_lib::config;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -221,50 +222,58 @@ fn optimize_system_tweaks(enable: bool) -> AppResult<()> {
 
 #[command]
 pub async fn optimize_network(enable: bool) -> Result<(), String> {
-    optimize_network_internal(enable).await.map_err(|e| e.to_string())
+    optimize_network_internal(enable, "safe".to_string())
+        .await
+        .map_err(|e| e.to_string())
 }
 
-async fn optimize_network_internal(enable: bool) -> AppResult<()> {
+#[command]
+pub async fn optimize_network_adv(enable: bool, level: String) -> Result<(), String> {
+    optimize_network_internal(enable, level).await.map_err(|e| e.to_string())
+}
+
+async fn optimize_network_internal(enable: bool, level: String) -> AppResult<()> {
     if enable {
+        let snapshot = config::get_config().await?.network_opt_snapshot;
+        if snapshot.is_none() {
+            let snap = snapshot_network_registry()?;
+            config::set_config_value("networkOptSnapshot", snap).await?;
+        }
+
         // Netsh commands
-        run_cmd("ipconfig", &["/release"])?;
-        run_cmd("ipconfig", &["/renew"])?;
         run_cmd("ipconfig", &["/flushdns"])?;
         run_cmd("netsh", &["winsock", "reset"])?;
 
-        // Disable Power Saving Features on USB and Ethernet (PowerShell)
-        let ps_script = r#"
-            $devicesUSB = Get-PnpDevice | where {$_.InstanceId -match 'USB'}
-            $devicesUSB | ForEach-Object {
-                Disable-PnpDevice -InstanceId $_.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
-                Enable-PnpDevice -InstanceId $_.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
-            }
-            Get-CimInstance -ClassName MSPower_DeviceEnable -Namespace root\wmi | ForEach-Object { $_.Enable = $false; $_ | Set-CimInstance }
-        "#;
-        // The user's script for this was:
-        // $devicesUSB = Get-PnpDevice | where {$_.InstanceId -match 'USB'} ... (User's script seems cut off or uses a complex one-liner)
-        // User provided: "powershell.exe -encodedCommand JABkAGUAdgBpAGMAZQBzAFUAUwBCACAAPQAgAEcAZQB0AC0AUABuAHAARABlAHYAaQBjAGUAIAB8ACAAdwBoAGUAcgBlACAAewAkAF8ALgBJAG4AcwB0AGEAbm..."
-        // Decoded: $devicesUSB = Get-PnpDevice | where {$_.InstanceId -match 'USB'} | ForEach-Object -Process { Get-CimInstance -ClassName MSPower_DeviceEnable -Namespace root\wmi | Where-Object {$_.InstanceName -match $_.InstanceId} | ForEach-Object {$_.Enable = $false; $_ | Set-CimInstance} }
-        // We can run the encoded command directly to be safe and match user input exactly.
-        run_cmd("powershell", &["-encodedCommand", "JABkAGUAdgBpAGMAZQBzAFUAUwBCACAAPQAgAEcAZQB0AC0AUABuAHAARABlAHYAaQBjAGUAIAB8ACAAdwBoAGUAcgBlACAAewAkAF8ALgBJAG4AcwB0AGEAbmMAYwBlAEkAZAAgAC0AbQBhAHQAYwBoACAAJwBvAGIAYgAnAH0AIAB8ACAARgBvAHIARQBhAGMAaAAtAE8AYgBqAGUAYwB0ACAALQBQAHIAbwBjAGUAcwBzACAAewANAAoARwBlAHQALQBDAGkAbQBJAG4AcwB0AGEAbgBjAGUAIAAtAEMAbABhAHMAcwBOAGEAbQBlACAATQBTAFAAbwB3AGUAcgBfAEQAZQB2AGkAYwBlAEQAZQBzAGEAYgBsAGUAIAAtAE4AYQBtAGUAcwBwAGEAYwBlACAAcgBvAG8AdABcAHcAbQBpACAAfAAgAFcAaABlAHIAZQAtAE8AYgBqAGUAYwB0ACAAewAkAF8ALgBJAG4AcwB0AGEAbmBjAGUATgBhAG0AZQAgAC0AbQBhAHQAYwBoACAAJABfAC4ASQBuAHMAdABhAG4AYwBlAEkAZAB9ACAAfAAgAEYAbwByAEUAYQBjAGgALQBPAGIAagBlAGMAdAAgAHsAJABfAC4ARQBuAGEAYgBsAGUAIAA9ACAAJABmAGEAbABzAGUAOwAgACQAXwAgAHwAIABTAGUAdAAtAEMAaQBtAEkAbgBzAHQAYQBuAGMAZQB9AA0ACgB9AA=="])?;
-        // Wait, the encoded command in user input might be different. 
-        // User input: "JABkAGUAdgBpAGMAZQBzAFUAUwBCACAAPQAgAEcAZQB0AC0AUABuAHAARABlAHYAaQBjAGUAIAB8ACAAdwBoAGUAcgBlACAAewAkAF8ALgBJAG4AcwB0AGEAbmMAYwBlAS0AIABvAGIAYgplAGEAYwBoAC0ATwBiAGoAZQBjAHQAIAAtAFAAcgBvAGMAZQBzAHMAIAB7AA0ACgBHAGUAdAAtAEMAaQBtAEkAbgBzAHQAYQBuAGMAZQAgAC0AQwBsAGEAcwBzAE4AYQBtAGUAIABNAFMAUABvAHcAZQByAF8ARABlAHYAaQBjAGUARQBuAGEAYgBsAGUAIAAtAE4AYQBtAGUAcA=="
-        // It looks truncated or corrupted in the user message (e.g. "Namep").
-        // I will use a known working PowerShell script for this instead of the potentially broken encoded string.
-        run_cmd("powershell", &["-Command", "Get-CimInstance -ClassName MSPower_DeviceEnable -Namespace root\\wmi | ForEach-Object { $_.Enable = $false; $_ | Set-CimInstance }"])?;
+        if level == "aggressive" {
+            run_cmd("ipconfig", &["/release"])?;
+            run_cmd("ipconfig", &["/renew"])?;
+            run_cmd(
+                "powershell",
+                &[
+                    "-Command",
+                    "Get-CimInstance -ClassName MSPower_DeviceEnable -Namespace root\\wmi | ForEach-Object { $_.Enable = $false; $_ | Set-CimInstance }",
+                ],
+            )?;
+        }
 
         // Telemetry
         optimize_telemetry(true)?;
         
         // Existing Network Optimizations (TcpAck, Throttling)
-        optimize_network_registry(true)?;
+        optimize_network_registry(true, &level)?;
 
     } else {
         // Revert Telemetry
         optimize_telemetry(false)?;
         
         // Revert Network Registry
-        optimize_network_registry(false)?;
+        let snapshot = config::get_config().await?.network_opt_snapshot;
+        if let Some(snap) = snapshot {
+            restore_network_snapshot(&snap)?;
+            config::set_config_value("networkOptSnapshot", serde_json::Value::Null).await?;
+        } else {
+            optimize_network_registry(false, &level)?;
+        }
     }
 
     Ok(())
@@ -296,7 +305,7 @@ fn optimize_telemetry(enable: bool) -> AppResult<()> {
     Ok(())
 }
 
-fn optimize_network_registry(enable: bool) -> AppResult<()> {
+fn optimize_network_registry(enable: bool, level: &str) -> AppResult<()> {
     // 1. TcpAckFrequency & TCPNoDelay (Iterate Interfaces)
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     let interfaces_path = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
@@ -322,21 +331,129 @@ fn optimize_network_registry(enable: bool) -> AppResult<()> {
     }
 
     // 3. NIC Advanced Properties
+    if level == "aggressive" {
+        let net_class_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
+        if let Ok(class_key) = hklm.open_subkey_with_flags(net_class_path, KEY_READ) {
+            for subkey_name in class_key.enum_keys().filter_map(|x| x.ok()) {
+                if subkey_name.len() != 4 || !subkey_name.chars().all(char::is_numeric) { continue; }
+
+                if let Ok(nic_key) = class_key.open_subkey_with_flags(&subkey_name, KEY_WRITE) {
+                     if nic_key.get_value::<String, _>("DriverDesc").is_ok() {
+                         if enable {
+                            let _ = nic_key.set_value("*InterruptModeration", &"0");
+                            let _ = nic_key.set_value("*FlowControl", &"0");
+                            let _ = nic_key.set_value("*JumboPacket", &"0"); 
+                         }
+                     }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn snapshot_network_registry() -> AppResult<serde_json::Value> {
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+    let interfaces_path = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
+    if let Ok(interfaces) = hklm.open_subkey_with_flags(interfaces_path, KEY_READ) {
+        for name in interfaces.enum_keys().filter_map(|x| x.ok()) {
+            let interface_path = format!(r"{}\{}", interfaces_path, name);
+            if let Ok(interface_key) = hklm.open_subkey_with_flags(&interface_path, KEY_READ) {
+                for value_name in ["TcpAckFrequency", "TCPNoDelay"] {
+                    let existed = interface_key.get_raw_value(value_name).is_ok();
+                    let value = interface_key.get_value::<u32, _>(value_name).ok();
+                    entries.push(serde_json::json!({
+                        "hive": "HKLM",
+                        "path": interface_path,
+                        "name": value_name,
+                        "kind": "DWORD",
+                        "existed": existed,
+                        "value": value
+                    }));
+                }
+            }
+        }
+    }
+
+    let throttling_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile";
+    if let Ok(key) = hklm.open_subkey_with_flags(throttling_path, KEY_READ) {
+        let existed = key.get_raw_value("NetworkThrottlingIndex").is_ok();
+        let value = key.get_value::<u32, _>("NetworkThrottlingIndex").ok();
+        entries.push(serde_json::json!({
+            "hive": "HKLM",
+            "path": throttling_path,
+            "name": "NetworkThrottlingIndex",
+            "kind": "DWORD",
+            "existed": existed,
+            "value": value
+        }));
+    } else {
+        entries.push(serde_json::json!({
+            "hive": "HKLM",
+            "path": throttling_path,
+            "name": "NetworkThrottlingIndex",
+            "kind": "DWORD",
+            "existed": false,
+            "value": null
+        }));
+    }
+
     let net_class_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
     if let Ok(class_key) = hklm.open_subkey_with_flags(net_class_path, KEY_READ) {
         for subkey_name in class_key.enum_keys().filter_map(|x| x.ok()) {
             if subkey_name.len() != 4 || !subkey_name.chars().all(char::is_numeric) { continue; }
+            let nic_path = format!(r"{}\{}", net_class_path, subkey_name);
+            if let Ok(nic_key) = hklm.open_subkey_with_flags(&nic_path, KEY_READ) {
+                if nic_key.get_value::<String, _>("DriverDesc").is_ok() {
+                    for value_name in ["*InterruptModeration", "*FlowControl", "*JumboPacket"] {
+                        let existed = nic_key.get_raw_value(value_name).is_ok();
+                        let value = nic_key.get_value::<String, _>(value_name).ok();
+                        entries.push(serde_json::json!({
+                            "hive": "HKLM",
+                            "path": nic_path,
+                            "name": value_name,
+                            "kind": "SZ",
+                            "existed": existed,
+                            "value": value
+                        }));
+                    }
+                }
+            }
+        }
+    }
 
-            if let Ok(nic_key) = class_key.open_subkey_with_flags(&subkey_name, KEY_WRITE) {
-                 if nic_key.get_value::<String, _>("DriverDesc").is_ok() {
-                     if enable {
-                        let _ = nic_key.set_value("*InterruptModeration", &"0");
-                        let _ = nic_key.set_value("*FlowControl", &"0");
-                        let _ = nic_key.set_value("*JumboPacket", &"0"); 
-                     } else {
-                        let _ = nic_key.set_value("*InterruptModeration", &"1");
-                     }
-                 }
+    Ok(serde_json::Value::Array(entries))
+}
+
+fn restore_network_snapshot(snapshot: &serde_json::Value) -> AppResult<()> {
+    let entries = snapshot.as_array().cloned().unwrap_or_default();
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+    for e in entries {
+        let hive = e.get("hive").and_then(|v| v.as_str()).unwrap_or("");
+        if hive != "HKLM" {
+            continue;
+        }
+        let path = e.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        let name = e.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = e.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        let existed = e.get("existed").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        if let Ok(key) = hklm.open_subkey_with_flags(path, KEY_WRITE | KEY_READ) {
+            if !existed {
+                let _ = key.delete_value(name);
+                continue;
+            }
+            if kind == "DWORD" {
+                if let Some(v) = e.get("value").and_then(|v| v.as_u64()) {
+                    let _ = key.set_value(name, &(v as u32));
+                }
+            } else if kind == "SZ" {
+                if let Some(v) = e.get("value").and_then(|v| v.as_str()) {
+                    let _ = key.set_value(name, &v);
+                }
             }
         }
     }

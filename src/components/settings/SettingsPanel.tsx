@@ -1,6 +1,7 @@
 import React from 'react';
 import { Zap, Scale, Trash2, Download, Upload, Settings, AlertOctagon } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { save, open } from '@tauri-apps/plugin-dialog';
 
 // Import split components
@@ -32,6 +33,8 @@ export default function SettingsPanel({
     const [bombStatus, setBombStatus] = React.useState<TimeBombStatus | null>(null);
     const [autoEnforceEnabled, setAutoEnforceEnabled] = React.useState(false);
     const [topology, setTopology] = React.useState<LogicalCore[]>([]);
+    const [autostartStatus, setAutostartStatus] = React.useState<any>(null);
+    const [lastApplyStatus, setLastApplyStatus] = React.useState<any>(null);
     const [backupPath, setBackupPath] = React.useState<string>('');
     const [backingUp, setBackingUp] = React.useState(false);
 
@@ -39,7 +42,25 @@ export default function SettingsPanel({
         invoke<TimeBombStatus>('check_expiration').then(setBombStatus).catch(console.error);
         invoke<boolean>('get_auto_enforce_enabled').then(setAutoEnforceEnabled).catch(console.error);
         invoke<LogicalCore[]>('get_cpu_topology').then(setTopology).catch(console.error);
+        invoke<any>('get_autostart_status').then(setAutostartStatus).catch(console.error);
         invoke<string>('get_backup_path').then(setBackupPath).catch(console.error);
+    }, []);
+
+    React.useEffect(() => {
+        let unlisten: any = null;
+        const setup = async () => {
+            try {
+                unlisten = await listen('apply-status', (event) => {
+                    setLastApplyStatus(event.payload as any);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        setup();
+        return () => {
+            if (unlisten) unlisten();
+        };
     }, []);
 
     const groupOptions = React.useMemo(() => {
@@ -136,6 +157,11 @@ export default function SettingsPanel({
                     <p className="text-xs text-slate-500 mt-0.5">
                         当前状态: <span className="font-mono font-bold">{autoEnforceEnabled ? '已开启' : '未开启(手动模式)'}</span>
                     </p>
+                    {lastApplyStatus && (
+                        <p className="text-[11px] text-slate-500 mt-1">
+                            最近一次应用: <span className="font-mono">{lastApplyStatus.source}</span> PID <span className="font-mono">{lastApplyStatus.pid}</span> {lastApplyStatus.ok ? '成功' : '失败'}
+                        </p>
+                    )}
                 </div>
                 <button
                     onClick={async () => {
@@ -209,13 +235,30 @@ export default function SettingsPanel({
                                         </span>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => onRemoveProfile(profile.name)}
-                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                    title="删除策略"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const r = await invoke<any>('apply_profile_to_running_processes', { name: profile.name });
+                                                alert(`已应用到运行中的进程：匹配 ${r.matched}，成功 ${r.applied}`);
+                                            } catch (e) {
+                                                console.error(e);
+                                                alert(`应用失败: ${e}`);
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors shadow-sm"
+                                        title="应用到当前运行进程"
+                                    >
+                                        应用
+                                    </button>
+                                    <button
+                                        onClick={() => onRemoveProfile(profile.name)}
+                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                        title="删除策略"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -440,6 +483,15 @@ export default function SettingsPanel({
                         <div>
                             <h5 className="font-medium text-slate-700">开机自启动</h5>
                             <p className="text-xs text-slate-400">系统启动时自动运行程序</p>
+                            {autostartStatus && (
+                                <p className="text-[11px] mt-1 text-slate-500">
+                                    {autostartStatus.exists
+                                        ? (autostartStatus.pathMatches
+                                            ? '任务计划已创建，路径匹配'
+                                            : '任务计划已创建，但路径不匹配(可能是旧版本)')
+                                        : '未检测到任务计划'}
+                                </p>
+                            )}
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -450,6 +502,22 @@ export default function SettingsPanel({
                             />
                             <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
                         </label>
+                    </div>
+                    <div className="flex justify-end">
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await invoke('set_admin_autostart', { enable: !!settings.launchOnStartup });
+                                } catch (e) {
+                                    console.error(e);
+                                } finally {
+                                    invoke<any>('get_autostart_status').then(setAutostartStatus).catch(console.error);
+                                }
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors border border-slate-200 bg-white"
+                        >
+                            诊断/修复
+                        </button>
                     </div>
 
                     <div className="flex items-center justify-between">

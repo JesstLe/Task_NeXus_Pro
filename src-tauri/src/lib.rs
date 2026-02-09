@@ -359,6 +359,10 @@ pub struct AppConfig {
     pub pro_balance: ProBalanceConfig,
     /// 后台限制列表
     pub throttle_list: Vec<String>,
+    #[serde(default)]
+    pub auto_enforce_enabled: bool,
+    #[serde(default)]
+    pub network_opt_snapshot: Option<serde_json::Value>,
     /// 授权许可
     pub license: Option<String>,
     /// 永劫无间画质页配置 (前端用)
@@ -412,6 +416,8 @@ impl Default for AppConfig {
             smart_trim: SmartTrimConfig::default(),
             pro_balance: ProBalanceConfig::default(),
             throttle_list: Vec::new(),
+            auto_enforce_enabled: false,
+            network_opt_snapshot: None,
             license: None,
             graphics_settings: None,
         }

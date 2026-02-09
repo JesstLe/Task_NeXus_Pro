@@ -202,6 +202,17 @@ function App() {
     const handleSettingChange = async (key: string, value: any) => {
         setSettings(prev => ({ ...prev, [key]: value }));
         try {
+            if (key === 'launchOnStartup') {
+                try {
+                    await invoke('set_admin_autostart', { enable: value });
+                } catch (err) {
+                    console.error('Failed to set autostart:', err);
+                    setSettings(prev => ({ ...prev, launchOnStartup: !value }));
+                    showToast(`自启动设置失败: ${err}`, 'error');
+                    return;
+                }
+            }
+
             const result = await invoke<{ success: boolean }>('set_setting', { key, value });
             if (result.success) {
                 const settingNames: Record<string, string> = {
@@ -211,17 +222,6 @@ function App() {
                     graphicsSettings: '游戏画面设置'
                 };
                 const settingName = settingNames[key] || key;
-
-                // Special handling for autostart
-                if (key === 'launchOnStartup') {
-                    try {
-                        await invoke('set_admin_autostart', { enable: value });
-                    } catch (err) {
-                        console.error('Failed to set autostart:', err);
-                        showToast(`自启动设置失败: ${err}`, 'error');
-                        return; // Stop if autostart setup failed
-                    }
-                }
 
                 if (key === 'graphicsSettings') {
                     showToast(`${settingName}已保存`, 'success');

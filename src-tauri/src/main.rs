@@ -11,6 +11,7 @@ use task_nexus_lib::{
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter,
     Manager,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -126,6 +127,97 @@ fn set_admin_autostart(enable: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_autostart_status() -> Result<serde_json::Value, String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let task_name = "TaskNexusAutoStart";
+
+    let current_exe = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+
+    let script = format!(
+        r#"
+        $t = Get-ScheduledTask -TaskName "{name}" -ErrorAction SilentlyContinue;
+        if ($null -eq $t) {{ "" | ConvertTo-Json -Compress; exit 0 }}
+        $o = [pscustomobject]@{{
+            exists = $true;
+            state = ($t.State | Out-String).Trim();
+            principal = $t.Principal;
+            actions = $t.Actions;
+            triggers = $t.Triggers;
+        }};
+        $o | ConvertTo-Json -Depth 6 -Compress;
+        "#,
+        name = task_name
+    );
+
+    let output = Command::new("powershell")
+        .args(&[
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &script,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Ok(serde_json::json!({
+            "exists": false,
+            "ok": false,
+            "error": format!("Task query failed: {}", err_msg),
+            "currentExe": current_exe
+        }));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() || stdout == "\"\"" {
+        return Ok(serde_json::json!({
+            "exists": false,
+            "ok": true,
+            "currentExe": current_exe
+        }));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or(serde_json::Value::Null);
+    let execute = parsed
+        .get("actions")
+        .and_then(|a| a.get(0))
+        .and_then(|a0| a0.get("Execute"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let run_level = parsed
+        .get("principal")
+        .and_then(|p| p.get("RunLevel"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let path_matches = !execute.is_empty() && execute.eq_ignore_ascii_case(&current_exe);
+    let highest = run_level.eq_ignore_ascii_case("Highest");
+
+    Ok(serde_json::json!({
+        "exists": true,
+        "ok": true,
+        "currentExe": current_exe,
+        "taskExecute": execute,
+        "pathMatches": path_matches,
+        "runLevel": run_level,
+        "runLevelHighest": highest
+    }))
+}
+
 // ============================================================================
 // Tauri Commands - 进程管理
 // ============================================================================
@@ -156,18 +248,33 @@ async fn set_affinity(
 /// 设置进程亲和性 (Smart Selector)
 #[tauri::command]
 async fn set_process_affinity(
+    app: tauri::AppHandle,
     pid: u32,
     affinity_mask: String,
 ) -> Result<serde_json::Value, String> {
-    governor::set_process_affinity(pid, affinity_mask)
+    let mask = affinity_mask.trim().trim_start_matches("0x").to_string();
+    let r = governor::set_process_affinity(pid, mask.clone())
         .await
         .map(|_| serde_json::json!({"success": true}))
-        .map_err(|e: AppError| e.to_string())
+        .map_err(|e: AppError| e.to_string());
+    let ok = r.is_ok();
+    let _ = app.emit(
+        "apply-status",
+        serde_json::json!({
+            "source": "manual",
+            "pid": pid,
+            "ok": ok,
+            "mask": mask,
+            "ts": chrono::Local::now().timestamp_millis()
+        }),
+    );
+    r
 }
 
 /// 批量手动设置进程亲和性
 #[tauri::command]
 async fn batch_apply_affinity(
+    app: tauri::AppHandle,
     pids: Vec<u32>,
     mask_hex: String,
     lock_heavy_thread: bool,
@@ -191,17 +298,113 @@ async fn batch_apply_affinity(
         // 1. 设置进程亲和性
         if governor::set_process_affinity(pid, mask_hex.clone()).await.is_ok() {
             success_count += 1;
+            let _ = app.emit(
+                "apply-status",
+                serde_json::json!({
+                    "source": "batch",
+                    "pid": pid,
+                    "ok": true,
+                    "mask": mask_hex,
+                    "ts": chrono::Local::now().timestamp_millis()
+                }),
+            );
             
             // 2. 如果开启了主线程锁定
             if lock_heavy_thread {
                 let _ = thread::smart_bind_thread(pid, target_core as u32).await;
             }
+        } else {
+            let _ = app.emit(
+                "apply-status",
+                serde_json::json!({
+                    "source": "batch",
+                    "pid": pid,
+                    "ok": false,
+                    "mask": mask_hex,
+                    "ts": chrono::Local::now().timestamp_millis()
+                }),
+            );
         }
     }
 
     Ok(serde_json::json!({
         "success": true,
         "count": success_count
+    }))
+}
+
+#[tauri::command]
+async fn apply_profile_to_running_processes(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let profiles = config::get_profiles().await.map_err(|e| e.to_string())?;
+    let target = profiles
+        .into_iter()
+        .find(|p| p.name.eq_ignore_ascii_case(&name))
+        .ok_or_else(|| format!("Profile not found: {}", name))?;
+
+    let processes = governor::get_process_snapshot()
+        .await
+        .map_err(|e: AppError| e.to_string())?;
+
+    let mut matched = 0u32;
+    let mut success = 0u32;
+    let affinity_hex = target.affinity.trim().trim_start_matches("0x").to_string();
+
+    for p in processes {
+        if !p.name.eq_ignore_ascii_case(&target.name) {
+            continue;
+        }
+        matched += 1;
+        let mut ok = true;
+        let mut message = String::new();
+
+        if let Err(e) = governor::set_process_affinity(p.pid, affinity_hex.clone()).await {
+            ok = false;
+            message = e.to_string();
+        }
+
+        if ok {
+            if let Some(level) = task_nexus_lib::PriorityLevel::from_str(&target.priority) {
+                if let Err(e) = governor::set_priority(p.pid, level).await {
+                    ok = false;
+                    message = e.to_string();
+                }
+            }
+        }
+
+        if ok {
+            if let Some(percent) = target.cpu_limit_percent {
+                if let Err(e) = governor::set_cpu_rate_limit(p.pid, percent).await {
+                    ok = false;
+                    message = e.to_string();
+                }
+            }
+        }
+
+        if ok {
+            success += 1;
+        }
+
+        let _ = app.emit(
+            "apply-status",
+            serde_json::json!({
+                "source": "profile",
+                "profile": target.name,
+                "pid": p.pid,
+                "ok": ok,
+                "mask": affinity_hex,
+                "message": message,
+                "ts": chrono::Local::now().timestamp_millis()
+            }),
+        );
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "matched": matched,
+        "applied": success
     }))
 }
 
@@ -572,6 +775,9 @@ async fn get_auto_enforce_enabled() -> Result<bool, String> {
 #[tauri::command]
 async fn set_auto_enforce_enabled(enable: bool) -> Result<bool, String> {
     task_nexus_lib::monitor::set_auto_enforce_enabled(enable);
+    config::set_config_value("autoEnforceEnabled", serde_json::Value::Bool(enable))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -674,6 +880,9 @@ pub fn run() {
             let app_handle = app.handle();
             if let Err(e) = config::init_config(app_handle) {
                 tracing::error!("Failed to init config: {}", e);
+            }
+            if let Ok(cfg) = config::get_config_sync() {
+                task_nexus_lib::monitor::set_auto_enforce_enabled(cfg.auto_enforce_enabled);
             }
 
             // Enable SeDebugPrivilege for maximum optimization capability
@@ -783,12 +992,14 @@ pub fn run() {
             apply_tweaks,
             get_timer_resolution,
             set_timer_resolution,
+            get_autostart_status,
             // 配置管理
             get_settings,
             set_setting,
             add_profile,
             remove_profile,
             get_profiles,
+            apply_profile_to_running_processes,
             batch_apply_affinity,
             batch_reset_to_default,
             advanced_affinity::apply_cascading_affinity,
@@ -817,6 +1028,7 @@ pub fn run() {
             // Optimizer Commands
             optimizer::optimize_latency,
             optimizer::optimize_network,
+            optimizer::optimize_network_adv,
             optimizer::optimize_power_gpu,
             optimizer::get_win32_priority_separation,
             optimizer::set_win32_priority_separation,

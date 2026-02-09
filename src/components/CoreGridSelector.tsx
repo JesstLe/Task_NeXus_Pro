@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LogicalCore } from '../types';
 import { X, Check, Zap, Cpu, MousePointer2, ArrowRight } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
@@ -17,6 +17,18 @@ export default function CoreGridSelector({ topology, pids, onApply, onCancel, is
     const [lockHeavy, setLockHeavy] = useState(false);
     const [isSequenceMode, setIsSequenceMode] = useState(false);
     const [coreQueue, setCoreQueue] = useState<number[]>([]); // 有序队列
+    const [sequenceRunning, setSequenceRunning] = useState(false);
+    const [sequenceIndex, setSequenceIndex] = useState(0);
+    const [sequenceIntervalMs, setSequenceIntervalMs] = useState(8000);
+    const [sequenceLog, setSequenceLog] = useState<string[]>([]);
+    const stopRef = useRef(false);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        return () => {
+            stopRef.current = true;
+        };
+    }, []);
 
     // 辅助函数：根据核心类型返回颜色类名
     const getCoreStyles = (core: LogicalCore) => {
@@ -83,6 +95,84 @@ export default function CoreGridSelector({ topology, pids, onApply, onCancel, is
         if (isSequenceMode) {
             setCoreQueue(allIds);
         }
+    };
+
+    const startSequenceTest = async () => {
+        if (coreQueue.length === 0) {
+            alert("请先在序列队列中选择核心");
+            return;
+        }
+        if (pids.length === 0) {
+            alert("请先选择进程");
+            return;
+        }
+        stopRef.current = false;
+        setSequenceRunning(true);
+        setSequenceLog([]);
+
+        try {
+            for (let i = 0; i < coreQueue.length; i++) {
+                if (stopRef.current) break;
+                setSequenceIndex(i);
+
+                const coreId = coreQueue[i];
+                const maskHex = (1n << BigInt(coreId)).toString(16);
+                const result = await invoke<any>('batch_apply_affinity', {
+                    pids,
+                    maskHex,
+                    lockHeavyThread: lockHeavy
+                });
+                setSequenceLog(prev => [
+                    ...prev,
+                    `#${i + 1}/${coreQueue.length} 核心 ${coreId} -> 成功 ${result?.count ?? 0}/${pids.length}`
+                ]);
+
+                if (i < coreQueue.length - 1) {
+                    await new Promise<void>(resolve => setTimeout(resolve, Math.max(200, sequenceIntervalMs)));
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            setSequenceLog(prev => [...prev, `执行失败: ${e}`]);
+        } finally {
+            setSequenceRunning(false);
+        }
+    };
+
+    const stopSequenceTest = () => {
+        stopRef.current = true;
+        setSequenceRunning(false);
+    };
+
+    const exportSequence = () => {
+        const payload = {
+            intervalMs: sequenceIntervalMs,
+            cores: coreQueue,
+            lockHeavy
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'core-sequence.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const importSequence = async (file: File) => {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const cores = Array.isArray(data.cores) ? data.cores.map((n: any) => Number(n)).filter((n: any) => Number.isFinite(n)) : [];
+        setIsSequenceMode(true);
+        setCoreQueue(cores);
+        setSelectedCores(new Set(cores));
+        if (typeof data.intervalMs === 'number' && Number.isFinite(data.intervalMs)) {
+            setSequenceIntervalMs(Math.max(200, Math.floor(data.intervalMs)));
+        }
+        if (typeof data.lockHeavy === 'boolean') {
+            setLockHeavy(data.lockHeavy);
+        }
+        setSequenceLog([]);
     };
 
     const handleApply = async () => {
@@ -216,6 +306,84 @@ export default function CoreGridSelector({ topology, pids, onApply, onCancel, is
                                         </div>
                                     ))
                                 )}
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div className="p-3 bg-white/70 rounded-xl border border-amber-100">
+                                    <div className="text-[10px] font-bold text-amber-800/60 mb-2 uppercase tracking-wider">序列测试</div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-500 whitespace-nowrap">间隔(ms)</span>
+                                        <input
+                                            type="number"
+                                            min={200}
+                                            step={200}
+                                            value={sequenceIntervalMs}
+                                            onChange={(e) => setSequenceIntervalMs(Math.max(200, parseInt(e.target.value || '0', 10)))}
+                                            className="flex-1 px-2 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500/20"
+                                        />
+                                    </div>
+                                    <div className="mt-3 flex gap-2">
+                                        <button
+                                            onClick={startSequenceTest}
+                                            disabled={sequenceRunning || coreQueue.length === 0 || pids.length === 0}
+                                            className={`flex-1 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95 ${sequenceRunning ? 'bg-slate-300' : 'bg-amber-600 hover:bg-amber-700'}`}
+                                        >
+                                            {sequenceRunning ? `运行中 ${sequenceIndex + 1}/${coreQueue.length}` : '开始'}
+                                        </button>
+                                        <button
+                                            onClick={stopSequenceTest}
+                                            disabled={!sequenceRunning}
+                                            className="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all active:scale-95"
+                                        >
+                                            停止
+                                        </button>
+                                    </div>
+                                    {sequenceLog.length > 0 && (
+                                        <div className="mt-3 max-h-20 overflow-y-auto custom-scrollbar text-[10px] text-slate-600 space-y-1">
+                                            {sequenceLog.slice(-6).map((l, i) => (
+                                                <div key={i} className="font-mono">{l}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-3 bg-white/70 rounded-xl border border-amber-100">
+                                    <div className="text-[10px] font-bold text-amber-800/60 mb-2 uppercase tracking-wider">导入/导出</div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={exportSequence}
+                                            disabled={coreQueue.length === 0}
+                                            className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
+                                        >
+                                            导出
+                                        </button>
+                                        <button
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all active:scale-95"
+                                        >
+                                            导入
+                                        </button>
+                                    </div>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="application/json"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const f = e.target.files?.[0];
+                                            if (!f) return;
+                                            importSequence(f).catch((err) => {
+                                                console.error(err);
+                                                alert(`导入失败: ${err}`);
+                                            }).finally(() => {
+                                                e.target.value = '';
+                                            });
+                                        }}
+                                    />
+                                    <div className="text-[10px] text-slate-400 mt-2">
+                                        用于批量测试不同核心的性能，按队列逐个绑定
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}

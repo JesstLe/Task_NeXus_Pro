@@ -14,6 +14,7 @@ export default function OneClickOptimizer({ showToast }: OneClickOptimizerProps)
         power: false,
         hags: false
     });
+    const [networkLevel, setNetworkLevel] = useState<'safe' | 'aggressive'>('safe');
 
     const handleOptimize = async (type: 'latency' | 'network' | 'power', enable: boolean) => {
         setLoading(prev => ({ ...prev, [type]: true }));
@@ -21,7 +22,7 @@ export default function OneClickOptimizer({ showToast }: OneClickOptimizerProps)
             if (type === 'latency') {
                 await invoke('optimize_latency', { enable });
             } else if (type === 'network') {
-                await invoke('optimize_network', { enable });
+                await invoke('optimize_network_adv', { enable, level: networkLevel });
             } else if (type === 'power') {
                 await invoke('optimize_power_gpu', { enable, hags: status.hags });
             }
@@ -106,12 +107,34 @@ export default function OneClickOptimizer({ showToast }: OneClickOptimizerProps)
                     <div className="space-y-3 flex-1 mb-6">
                         <ul className="text-xs text-slate-500 space-y-2 list-disc list-inside">
                             <li>禁用系统遥测与数据收集 (Telemetry)</li>
-                            <li>禁用 USB/网卡 节能策略</li>
+                            <li>禁用 USB/网卡 节能策略 (激进档)</li>
                             <li>刷新 DNS 与重置 Winsock</li>
                             <li>禁用 TCP Nagle 算法 (NoDelay)</li>
                             <li>TcpAckFrequency = 1 (降低 Ping 值)</li>
                             <li>NetworkThrottlingIndex (解除限速)</li>
                         </ul>
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-xs font-medium text-slate-600">优化强度</span>
+                            <div className="flex bg-slate-100 p-0.5 rounded-lg border">
+                                <button
+                                    onClick={() => setNetworkLevel('safe')}
+                                    className={`px-2 py-0.5 text-[10px] rounded-md ${networkLevel === 'safe' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}
+                                >
+                                    安全
+                                </button>
+                                <button
+                                    onClick={() => setNetworkLevel('aggressive')}
+                                    className={`px-2 py-0.5 text-[10px] rounded-md ${networkLevel === 'aggressive' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400'}`}
+                                >
+                                    激进
+                                </button>
+                            </div>
+                        </div>
+                        {networkLevel === 'aggressive' && (
+                            <p className="text-[10px] text-amber-600 mt-1">
+                                激进档可能导致部分设备 DPC 飙升，建议出现异常后点“还原”并重启。
+                            </p>
+                        )}
                     </div>
                     <div className="flex gap-3 mt-auto">
                         <button
