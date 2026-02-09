@@ -564,6 +564,17 @@ async fn stop_cpu_monitor() -> Result<bool, String> {
     Ok(true)
 }
 
+#[tauri::command]
+async fn get_auto_enforce_enabled() -> Result<bool, String> {
+    Ok(task_nexus_lib::monitor::get_auto_enforce_enabled())
+}
+
+#[tauri::command]
+async fn set_auto_enforce_enabled(enable: bool) -> Result<bool, String> {
+    task_nexus_lib::monitor::set_auto_enforce_enabled(enable);
+    Ok(true)
+}
+
 /// 获取当前机器码
 #[tauri::command]
 async fn get_machine_code() -> Result<String, String> {
@@ -795,6 +806,8 @@ pub fn run() {
             // CPU 监控
             start_cpu_monitor,
             stop_cpu_monitor,
+            get_auto_enforce_enabled,
+            set_auto_enforce_enabled,
             get_machine_code,
             activate_license,
             get_license_status,

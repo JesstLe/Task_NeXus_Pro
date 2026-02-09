@@ -99,6 +99,11 @@ export interface AppSettings {
     profiles?: ProcessProfile[];
     defaultRules?: {
         enabled: boolean;
+        gameMask?: string | null;
+        systemMask?: string | null;
+        affinityOnly?: boolean;
+        gamePriority?: string;
+        systemPriority?: string;
     };
     gameList?: string[];
     proBalance?: {

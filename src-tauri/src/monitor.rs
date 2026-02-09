@@ -10,6 +10,16 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use std::collections::HashMap;
 
+static AUTO_ENFORCE_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn get_auto_enforce_enabled() -> bool {
+    AUTO_ENFORCE_ENABLED.load(Ordering::SeqCst)
+}
+
+pub fn set_auto_enforce_enabled(enabled: bool) {
+    AUTO_ENFORCE_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
 #[cfg(windows)]
 use windows::Win32::Foundation::*;
 #[cfg(windows)]
@@ -164,13 +174,14 @@ impl ProcessMonitor {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
-                // ProBalance Watchdog, Profile Enforcement & Smart Trim Check
-                tauri::async_runtime::block_on(async {
-                    crate::watchdog::enforce_profiles(&processes).await;
-                    crate::watchdog::apply_default_rules(&processes).await;
-                    crate::watchdog::check_and_restrain(&processes).await;
-                    crate::watchdog::check_and_trim_memory().await;
-                });
+                if get_auto_enforce_enabled() {
+                    tauri::async_runtime::block_on(async {
+                        crate::watchdog::enforce_profiles(&processes).await;
+                        crate::watchdog::apply_default_rules(&processes).await;
+                        crate::watchdog::check_and_restrain(&processes).await;
+                        crate::watchdog::check_and_trim_memory().await;
+                    });
+                }
 
                 // Emit event
                 if let Err(e) = app_handle.emit("process-update", &processes) {

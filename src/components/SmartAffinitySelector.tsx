@@ -87,6 +87,12 @@ export default function SmartAffinitySelector({
 
     const hasECores = topology.some(c => c.core_type === 'Efficiency');
     const hasVCache = topology.some(c => c.core_type === 'VCache');
+    const groupIds = Array.from(new Set(topology.map(c => c.group_id))).sort((a, b) => a - b);
+    const showGroupButtons = groupIds.length > 1;
+    const groupLabel = (groupId: number, index: number) => {
+        if (!hasECores && !hasVCache && groupIds.length === 2) return `CCD${index}`;
+        return `Group ${groupId}`;
+    };
 
     return (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -170,6 +176,20 @@ export default function SmartAffinitySelector({
                     </div>
 
                     <div className="mt-6 flex flex-wrap gap-2">
+                        {showGroupButtons && (
+                            <>
+                                {groupIds.map((gid, idx) => (
+                                    <button
+                                        key={gid}
+                                        onClick={() => selectCores(c => c.group_id === gid)}
+                                        className="px-3 py-1.5 text-xs bg-violet-50 text-violet-600 rounded-lg border border-violet-100 hover:bg-violet-100 transition-colors"
+                                    >
+                                        {groupLabel(gid, idx)}
+                                    </button>
+                                ))}
+                                <div className="w-px h-6 bg-slate-200 mx-1 self-center"></div>
+                            </>
+                        )}
                         {hasECores && (
                             <>
                                 <button onClick={() => selectCores(c => c.core_type === 'Performance')} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">只选 P-Cores</button>

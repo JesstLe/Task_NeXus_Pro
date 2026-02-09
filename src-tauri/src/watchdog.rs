@@ -475,10 +475,12 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                 }
             }
             
-            if let Some(level) = PriorityLevel::from_str(&rules.game_priority) {
-                if p.priority != rules.game_priority {
-                    let _ = governor::set_priority(p.pid, level).await;
-                    changed = true;
+            if !rules.affinity_only {
+                if let Some(level) = PriorityLevel::from_str(&rules.game_priority) {
+                    if p.priority != rules.game_priority {
+                        let _ = governor::set_priority(p.pid, level).await;
+                        changed = true;
+                    }
                 }
             }
         } else {
@@ -516,10 +518,12 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                     }
                 }
             }
-            if let Some(level) = PriorityLevel::from_str(&rules.system_priority) {
-                if p.priority != rules.system_priority {
-                    let _ = governor::set_priority(p.pid, level).await;
-                    changed = true;
+            if !rules.affinity_only {
+                if let Some(level) = PriorityLevel::from_str(&rules.system_priority) {
+                    if p.priority != rules.system_priority {
+                        let _ = governor::set_priority(p.pid, level).await;
+                        changed = true;
+                    }
                 }
             }
         }

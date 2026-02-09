@@ -10,7 +10,7 @@ import { TimerResolutionControl } from './TimerResolution';
 import { SmartTrimControl } from './SmartTrimControl';
 import { ThrottleListEditor } from './ThrottleListEditor';
 import { GameListEditor } from './GameListEditor';
-import { AppSettings, ProcessProfile, TimeBombStatus } from '../../types';
+import { AppSettings, LogicalCore, ProcessProfile, TimeBombStatus } from '../../types';
 
 interface SettingsPanelProps {
     mode: string;
@@ -30,13 +30,52 @@ export default function SettingsPanel({
     processes = []
 }: SettingsPanelProps) {
     const [bombStatus, setBombStatus] = React.useState<TimeBombStatus | null>(null);
+    const [autoEnforceEnabled, setAutoEnforceEnabled] = React.useState(false);
+    const [topology, setTopology] = React.useState<LogicalCore[]>([]);
     const [backupPath, setBackupPath] = React.useState<string>('');
     const [backingUp, setBackingUp] = React.useState(false);
 
     React.useEffect(() => {
         invoke<TimeBombStatus>('check_expiration').then(setBombStatus).catch(console.error);
+        invoke<boolean>('get_auto_enforce_enabled').then(setAutoEnforceEnabled).catch(console.error);
+        invoke<LogicalCore[]>('get_cpu_topology').then(setTopology).catch(console.error);
         invoke<string>('get_backup_path').then(setBackupPath).catch(console.error);
     }, []);
+
+    const groupOptions = React.useMemo(() => {
+        const groupMap = new Map<number, bigint>();
+        for (const c of topology) {
+            if (c.id >= 64) continue;
+            const prev = groupMap.get(c.group_id) ?? 0n;
+            groupMap.set(c.group_id, prev | (1n << BigInt(c.id)));
+        }
+        return Array.from(groupMap.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([groupId, mask], idx, arr) => ({
+                groupId,
+                label: (arr.length === 2 ? `CCD${idx}` : `Group ${groupId}`),
+                maskHex: mask.toString(16).toUpperCase(),
+            }));
+    }, [topology]);
+
+    const resolveRuleTarget = (mask?: string | null) => {
+        if (!mask) return 'auto';
+        const normalized = mask.replace(/^0x/i, '').toUpperCase();
+        const hit = groupOptions.find(o => o.maskHex === normalized);
+        return hit ? `group:${hit.groupId}` : 'custom';
+    };
+
+    const setRuleMaskByTarget = (key: 'gameMask' | 'systemMask', target: string) => {
+        const current = settings.defaultRules || { enabled: false };
+        if (target === 'auto') {
+            onSettingChange('defaultRules', { ...current, [key]: null });
+            return;
+        }
+        const groupId = Number(target.replace('group:', ''));
+        const option = groupOptions.find(o => o.groupId === groupId);
+        if (!option) return;
+        onSettingChange('defaultRules', { ...current, [key]: option.maskHex });
+    };
 
     const handleBackupRegistry = async () => {
         setBackingUp(true);
@@ -91,6 +130,30 @@ export default function SettingsPanel({
 
     return (
         <div className="space-y-4">
+            <div className="glass rounded-2xl p-4 shadow-soft border border-slate-100 flex items-center justify-between">
+                <div>
+                    <h4 className="font-medium text-slate-700 text-sm">自动调度</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                        当前状态: <span className="font-mono font-bold">{autoEnforceEnabled ? '已开启' : '未开启(手动模式)'}</span>
+                    </p>
+                </div>
+                <button
+                    onClick={async () => {
+                        const next = !autoEnforceEnabled;
+                        try {
+                            await invoke('set_auto_enforce_enabled', { enable: next });
+                            setAutoEnforceEnabled(next);
+                        } catch (e) {
+                            console.error(e);
+                            alert('设置失败: ' + e);
+                        }
+                    }}
+                    className={`px-4 py-2 text-sm font-bold text-white rounded-xl shadow-lg transition-all active:scale-95 ${autoEnforceEnabled ? 'bg-slate-600 hover:bg-slate-700' : 'bg-violet-600 hover:bg-violet-700 hover:shadow-violet-500/25'}`}
+                >
+                    {autoEnforceEnabled ? '停止自动调度' : '开始自动调度'}
+                </button>
+            </div>
+
             {/* Beta Expiration Info */}
             {bombStatus && (
                 <div className="glass rounded-2xl p-4 shadow-soft border border-orange-100 bg-orange-50/30 flex items-center justify-between">
@@ -182,13 +245,59 @@ export default function SettingsPanel({
 
                 {settings.defaultRules?.enabled && (
                     <div className="space-y-3 pt-3 border-t border-slate-100">
-                        <div className="flex items-center gap-3 text-sm">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                            <span className="text-slate-600">游戏进程 → P-Core / CCD0 (高优先级)</span>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                <div className="text-xs text-slate-500 mb-2">游戏进程目标</div>
+                                <select
+                                    className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-500/20"
+                                    value={resolveRuleTarget(settings.defaultRules?.gameMask)}
+                                    onChange={(e) => setRuleMaskByTarget('gameMask', e.target.value)}
+                                >
+                                    <option value="auto">自动</option>
+                                    {groupOptions.map(o => (
+                                        <option key={o.groupId} value={`group:${o.groupId}`}>{o.label}</option>
+                                    ))}
+                                    <option value="custom" disabled>自定义(请用亲和性面板手动设置)</option>
+                                </select>
+                                {settings.defaultRules?.gameMask && (
+                                    <div className="text-[10px] text-slate-400 mt-2 font-mono">0x{settings.defaultRules.gameMask}</div>
+                                )}
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                <div className="text-xs text-slate-500 mb-2">其他进程目标</div>
+                                <select
+                                    className="w-full text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-500/20"
+                                    value={resolveRuleTarget(settings.defaultRules?.systemMask)}
+                                    onChange={(e) => setRuleMaskByTarget('systemMask', e.target.value)}
+                                >
+                                    <option value="auto">自动</option>
+                                    {groupOptions.map(o => (
+                                        <option key={o.groupId} value={`group:${o.groupId}`}>{o.label}</option>
+                                    ))}
+                                    <option value="custom" disabled>自定义(请用亲和性面板手动设置)</option>
+                                </select>
+                                {settings.defaultRules?.systemMask && (
+                                    <div className="text-[10px] text-slate-400 mt-2 font-mono">0x{settings.defaultRules.systemMask}</div>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-3 text-sm">
-                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                            <span className="text-slate-600">其他进程 → E-Core / CCD1 (低优先级)</span>
+                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                            <div>
+                                <div className="text-sm text-slate-700 font-medium">仅锁核心</div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">不修改优先级，仅设置亲和性掩码</div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={settings.defaultRules?.affinityOnly ?? true}
+                                    onChange={(e) => onSettingChange('defaultRules', {
+                                        ...settings.defaultRules,
+                                        affinityOnly: e.target.checked
+                                    })}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                            </label>
                         </div>
                         <div className="pt-2 border-t border-slate-100">
                             <div className="flex items-center justify-between mb-2">

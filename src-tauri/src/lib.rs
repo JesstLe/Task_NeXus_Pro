@@ -250,6 +250,8 @@ pub struct DefaultRules {
     /// 系统进程掩码
     #[serde(alias = "system_mask")]
     pub system_mask: Option<String>,
+    #[serde(default)]
+    pub affinity_only: bool,
     /// 游戏优先级
     #[serde(alias = "game_priority")]
     pub game_priority: String,
@@ -264,6 +266,7 @@ impl Default for DefaultRules {
             enabled: false,
             game_mask: None,
             system_mask: None,
+            affinity_only: true,
             game_priority: "High".to_string(),
             system_priority: "BelowNormal".to_string(),
         }
