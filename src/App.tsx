@@ -497,6 +497,7 @@ function App() {
                         <SettingsPanel
                             mode={mode}
                             onModeChange={setMode}
+                            cpuArch={cpuArch}
                             settings={settings}
                             onSettingChange={handleSettingChange}
                             onRemoveProfile={handleRemoveProfile}

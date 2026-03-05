@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LogicalCore } from '../types';
 import { X, Check, Zap, Cpu, MousePointer2, ArrowRight } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
@@ -319,7 +320,7 @@ export default function CoreGridSelector({ topology, pids, onApply, onCancel, is
                                             step={200}
                                             value={sequenceIntervalMs}
                                             onChange={(e) => setSequenceIntervalMs(Math.max(200, parseInt(e.target.value || '0', 10)))}
-                                            className="flex-1 px-2 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500/20"
+                                            className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-amber-500/20"
                                         />
                                     </div>
                                     <div className="mt-3 flex gap-2">
@@ -507,10 +508,11 @@ export default function CoreGridSelector({ topology, pids, onApply, onCancel, is
 
     if (isEmbedded) return mainContent;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
             {mainContent}
-        </div>
+        </div>,
+        document.body
     );
 }

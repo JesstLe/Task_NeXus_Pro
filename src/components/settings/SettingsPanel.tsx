@@ -11,11 +11,12 @@ import { TimerResolutionControl } from './TimerResolution';
 import { SmartTrimControl } from './SmartTrimControl';
 import { ThrottleListEditor } from './ThrottleListEditor';
 import { GameListEditor } from './GameListEditor';
-import { AppSettings, LogicalCore, ProcessProfile, TimeBombStatus } from '../../types';
+import { AppSettings, CpuArch, LogicalCore, ProcessProfile, TimeBombStatus } from '../../types';
 
 interface SettingsPanelProps {
     mode: string;
     onModeChange: (mode: string) => void;
+    cpuArch?: CpuArch | null;
     settings: AppSettings;
     onSettingChange: (key: string, value: any) => void;
     onRemoveProfile: (name: string) => void;
@@ -25,6 +26,7 @@ interface SettingsPanelProps {
 export default function SettingsPanel({
     mode,
     onModeChange,
+    cpuArch,
     settings,
     onSettingChange,
     onRemoveProfile,
@@ -63,27 +65,60 @@ export default function SettingsPanel({
         };
     }, []);
 
-    const groupOptions = React.useMemo(() => {
+    const ruleOptions = React.useMemo(() => {
+        const cpuType = cpuArch?.type || '';
+        const isIntelHybrid = cpuType === 'INTEL_HYBRID' && !!(cpuArch as any)?.isHybrid;
+        const isAmdCcd = cpuType === 'AMD_CCD';
+
+        const buildMask = (filterFn: (c: LogicalCore) => boolean) => {
+            let mask = 0n;
+            for (const c of topology) {
+                if (c.id >= 64) continue;
+                if (filterFn(c)) mask |= (1n << BigInt(c.id));
+            }
+            return mask;
+        };
+
+        if (isIntelHybrid) {
+            const pMask = buildMask(c => c.core_type === 'Performance');
+            const eMask = buildMask(c => c.core_type === 'Efficiency');
+            const out: Array<{ id: string; label: string; maskHex: string }> = [];
+            if (pMask !== 0n) out.push({ id: 'p', label: 'P核', maskHex: pMask.toString(16).toUpperCase() });
+            if (eMask !== 0n) out.push({ id: 'e', label: 'E核', maskHex: eMask.toString(16).toUpperCase() });
+            return out;
+        }
+
         const groupMap = new Map<number, bigint>();
         for (const c of topology) {
             if (c.id >= 64) continue;
             const prev = groupMap.get(c.group_id) ?? 0n;
             groupMap.set(c.group_id, prev | (1n << BigInt(c.id)));
         }
-        return Array.from(groupMap.entries())
-            .sort((a, b) => a[0] - b[0])
-            .map(([groupId, mask], idx, arr) => ({
-                groupId,
-                label: (arr.length === 2 ? `CCD${idx}` : `Group ${groupId}`),
+        const groups = Array.from(groupMap.entries()).sort((a, b) => a[0] - b[0]);
+        if (isAmdCcd) {
+            return groups.map(([groupId, mask], idx) => ({
+                id: `ccd:${idx}`,
+                label: `CCD${idx}`,
                 maskHex: mask.toString(16).toUpperCase(),
             }));
-    }, [topology]);
+        }
+
+        if (groups.length > 1) {
+            return groups.map(([groupId, mask]) => ({
+                id: `group:${groupId}`,
+                label: `Group ${groupId}`,
+                maskHex: mask.toString(16).toUpperCase(),
+            }));
+        }
+
+        return [];
+    }, [topology, cpuArch]);
 
     const resolveRuleTarget = (mask?: string | null) => {
         if (!mask) return 'auto';
         const normalized = mask.replace(/^0x/i, '').toUpperCase();
-        const hit = groupOptions.find(o => o.maskHex === normalized);
-        return hit ? `group:${hit.groupId}` : 'custom';
+        const hit = ruleOptions.find(o => o.maskHex === normalized);
+        return hit ? hit.id : 'custom';
     };
 
     const setRuleMaskByTarget = (key: 'gameMask' | 'systemMask', target: string) => {
@@ -92,8 +127,7 @@ export default function SettingsPanel({
             onSettingChange('defaultRules', { ...current, [key]: null });
             return;
         }
-        const groupId = Number(target.replace('group:', ''));
-        const option = groupOptions.find(o => o.groupId === groupId);
+        const option = ruleOptions.find(o => o.id === target);
         if (!option) return;
         onSettingChange('defaultRules', { ...current, [key]: option.maskHex });
     };
@@ -297,8 +331,8 @@ export default function SettingsPanel({
                                     onChange={(e) => setRuleMaskByTarget('gameMask', e.target.value)}
                                 >
                                     <option value="auto">自动</option>
-                                    {groupOptions.map(o => (
-                                        <option key={o.groupId} value={`group:${o.groupId}`}>{o.label}</option>
+                                    {ruleOptions.map(o => (
+                                        <option key={o.id} value={o.id}>{o.label}</option>
                                     ))}
                                     <option value="custom" disabled>自定义(请用亲和性面板手动设置)</option>
                                 </select>
@@ -314,8 +348,8 @@ export default function SettingsPanel({
                                     onChange={(e) => setRuleMaskByTarget('systemMask', e.target.value)}
                                 >
                                     <option value="auto">自动</option>
-                                    {groupOptions.map(o => (
-                                        <option key={o.groupId} value={`group:${o.groupId}`}>{o.label}</option>
+                                    {ruleOptions.map(o => (
+                                        <option key={o.id} value={o.id}>{o.label}</option>
                                     ))}
                                     <option value="custom" disabled>自定义(请用亲和性面板手动设置)</option>
                                 </select>

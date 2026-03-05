@@ -10,6 +10,7 @@ if (!mode || !['installer', 'portable'].includes(mode)) {
 const rootDir = path.resolve(process.cwd());
 const tauriTargetDir = path.join(rootDir, 'src-tauri', 'target');
 const outDir = path.join(rootDir, 'release', mode);
+const packageJsonPath = path.join(rootDir, 'package.json');
 
 async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
@@ -45,6 +46,19 @@ async function copyFile(src, destDir) {
   return dest;
 }
 
+async function copyFileAs(src, destDir, baseName) {
+  const dest = path.join(destDir, baseName);
+  await fs.copyFile(src, dest);
+  return dest;
+}
+
+async function readPackageVersion() {
+  const text = await fs.readFile(packageJsonPath, 'utf-8');
+  const pkg = JSON.parse(text);
+  const v = String(pkg?.version || '').trim();
+  return v || null;
+}
+
 async function findPortableExe() {
   const expected = path.join(tauriTargetDir, 'release', 'task-nexus.exe');
   if (await fileExists(expected)) return expected;
@@ -76,6 +90,12 @@ async function main() {
     if (!exe) throw new Error(`portable exe not found under: ${path.join(tauriTargetDir, 'release')}`);
     const copied = await copyFile(exe, outDir);
     console.log(`portable: ${copied}`);
+
+    const version = await readPackageVersion();
+    if (version) {
+      const versioned = await copyFileAs(exe, outDir, `TN${version}.exe`);
+      console.log(`portable: ${versioned}`);
+    }
     return;
   }
 

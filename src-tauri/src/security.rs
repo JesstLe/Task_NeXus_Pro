@@ -23,72 +23,14 @@ pub struct TimeBombStatus {
 /// 2. 回退到系统时间
 /// 3. 如果当前时间 > 截止日期，返回过期
 pub async fn check_expiration() -> TimeBombStatus {
-    // 构建截止日期
-    let expiry = NaiveDate::from_ymd_opt(EXPIRATION_DATE.0, EXPIRATION_DATE.1, EXPIRATION_DATE.2)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-
-    // 1. 尝试获取网络时间
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
-
-    let mut network_time = None;
-
-    // 重试机制：尝试 3 次，每次间隔 1 秒
-    for attempt in 0..3 {
-        // 优先尝试百度
-        if let Ok(resp) = client.head("https://www.baidu.com").send().await {
-            if let Some(date_header) = resp.headers().get("date") {
-                if let Ok(date_str) = date_header.to_str() {
-                    if let Ok(parsed) = chrono::DateTime::parse_from_rfc2822(date_str) {
-                        network_time = Some(parsed.naive_utc());
-                        break; // 成功获取，跳出循环
-                    }
-                }
-            }
-        }
-
-        // 备选微软
-        if let Ok(resp) = client.head("https://www.microsoft.com").send().await {
-            if let Some(date_header) = resp.headers().get("date") {
-                if let Ok(date_str) = date_header.to_str() {
-                    if let Ok(parsed) = chrono::DateTime::parse_from_rfc2822(date_str) {
-                         network_time = Some(parsed.naive_utc());
-                         break; // 成功获取，跳出循环
-                    }
-                }
-            }
-        }
-        
-        // 如果未成功且不是最后一次尝试，则等待
-        if attempt < 2 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-    }
-
-    let (current_local, verification_source) = match network_time {
-        Some(t) => (
-            DateTime::<Utc>::from_utc(t, Utc)
-                .with_timezone(&Local)
-                .naive_local(),
-            "Network (Baidu/MS)".to_string(),
-        ),
-        None => (Local::now().naive_local(), "System".to_string()),
-    };
-
-    let is_expired = current_local > expiry;
-    let duration = expiry.signed_duration_since(current_local);
-    let days_remaining = if is_expired { 0 } else { duration.num_days().max(0) };
+    let current_local = Local::now().naive_local();
 
     TimeBombStatus {
-        is_expired,
-        expiration_date: expiry.format("%Y-%m-%d").to_string(),
+        is_expired: false,
+        expiration_date: "2099-12-31".to_string(),
         current_date: current_local.format("%Y-%m-%d %H:%M:%S").to_string(),
-        days_remaining,
-        verification_source,
+        days_remaining: 9999,
+        verification_source: "System (Unlocked)".to_string(),
     }
 }
 
